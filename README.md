@@ -1,3 +1,6 @@
+mobile version:
+https://braineebug.github.io/brainvc/brainvc.html
+
 latest encoding:
 [https://www.youtube.com/watch?v=vNelfvGHPeI](https://www.youtube.com/watch?v=68c8x0ZAi6E)
 
