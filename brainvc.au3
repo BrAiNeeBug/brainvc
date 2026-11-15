@@ -1,7 +1,7 @@
-; BrAiNVC - optical data channel, step 2a (loopback + PNG export for video)
+; BrAiNVC - optical data channel, step 2b (loopback + fast video export via ffmpeg)
 ; Usage:  brainvc.au3 enc     = live encoder (shows frames in a window)
 ;         brainvc.au3 scan    = scanner (drag the red frame over the encoder window / video player)
-;         brainvc.au3 export  = render PNG frames + make_video.bat (ffmpeg), no screen recording needed
+;         brainvc.au3 export  = write frames.raw + make_video.bat (ffmpeg builds the video), no screen recording needed
 ;         no argument         = chooser
 ; Scanner keys: PgUp/PgDn = resize frame (cell size +/- 1px), Home = save partial, End = quit
 #include <GDIPlus.au3>
@@ -30,17 +30,19 @@ Global $SAMPLES = 1                        ; scanner samples per cell: 1 = cente
 Global $g_iCell = 10                       ; scanner cell size in px
 Global $g_hGUI, $g_aBorder[4]
 Global $g_oDict, $g_iTotal = 0, $g_iMaxCnt = -1
+Global $g_aCrcTab[256]
 
-; ---- tuning: PNG export (for video) ---------------------------------
-Global $EXPORT_CELL = 20                   ; 20 = 1920x1080 frames
+; ---- tuning: video export -------------------------------------------
+Global $EXPORT_CELL = 20                   ; video upscale per cell: 20 = 1920x1080
 Global $EXPORT_VFPS = 30                   ; video frame rate
 Global $EXPORT_REPEAT = 3                  ; video frames per data frame (30/3 = 10 data frames/s)
 Global $EXPORT_PASSES = 2                  ; how many times the whole file is repeated in the video
 
+_InitCrc()
 Local $sMode = ""
 If $CmdLine[0] > 0 Then $sMode = $CmdLine[1]
 If $sMode = "" Then
-	Local $iAns = MsgBox(3 + 32, "BrAiNVC", "Yes = Live encoder" & @CRLF & "No = Scanner" & @CRLF & "Cancel = Export PNG frames (video)")
+	Local $iAns = MsgBox(3 + 32, "BrAiNVC", "Yes = Live encoder" & @CRLF & "No = Scanner" & @CRLF & "Cancel = Export video data (ffmpeg)")
 	Switch $iAns
 		Case 6
 			$sMode = "enc"
@@ -62,25 +64,29 @@ EndSwitch
 ; =====================================================================
 ; shared
 ; =====================================================================
-Func _Crc16Byte($iCrc, $iByte)
-	$iCrc = BitXOR($iCrc, BitShift($iByte, -8))
-	For $k = 0 To 7
-		If BitAND($iCrc, 0x8000) Then
-			$iCrc = BitAND(BitXOR(BitShift($iCrc, -1), 0x1021), 0xFFFF)
-		Else
-			$iCrc = BitAND(BitShift($iCrc, -1), 0xFFFF)
-		EndIf
+Func _InitCrc()
+	Local $c, $k
+	For $i = 0 To 255
+		$c = BitShift($i, -8)
+		For $k = 0 To 7
+			If BitAND($c, 0x8000) Then
+				$c = BitAND(BitXOR(BitShift($c, -1), 0x1021), 0xFFFF)
+			Else
+				$c = BitAND(BitShift($c, -1), 0xFFFF)
+			EndIf
+		Next
+		$g_aCrcTab[$i] = $c
 	Next
-	Return $iCrc
-EndFunc   ;==>_Crc16Byte
+EndFunc   ;==>_InitCrc
 
+; CRC16-CCITT (init 0xFFFF) over header bytes 0-4 and payload, table driven
 Func _FrameCrc(ByRef $aF)
-	Local $iCrc = 0xFFFF
+	Local $iCrc = 0xFFFF, $i
 	For $i = 0 To 4
-		$iCrc = _Crc16Byte($iCrc, $aF[$i])
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), $aF[$i]), 0xFF)])
 	Next
 	For $i = $HDR To $NBYTES - 1
-		$iCrc = _Crc16Byte($iCrc, $aF[$i])
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), $aF[$i]), 0xFF)])
 	Next
 	Return $iCrc
 EndFunc   ;==>_FrameCrc
@@ -199,41 +205,41 @@ Func _Shuffle(ByRef $a)
 EndFunc   ;==>_Shuffle
 
 ; =====================================================================
-; PNG export (frames in order, passes repeated, ffmpeg batch file)
+; video export (raw 1-bit frames in order, passes repeated, ffmpeg batch file)
 ; =====================================================================
 Func _Export()
 	Local $sFile = FileOpenDialog("File to transmit", @ScriptDir, "All (*.*)")
 	If @error Then Exit
-	Local $sDir = FileSelectFolder("Output folder for PNG frames", @ScriptDir)
+	Local $sDir = FileSelectFolder("Output folder (frames.raw + make_video.bat)", @ScriptDir)
 	If @error Then Exit
 	Local $bData = _ReadFile($sFile)
 	Local $iFrames = Int((BinaryLen($bData) + $PAY - 1) / $PAY)
 	If $iFrames < 1 Then $iFrames = 1
 
-	HotKeySet("{END}", "_Quit")
-	_GDIPlus_Startup()
-	Local $iW = $COLS * $EXPORT_CELL, $iH = $ROWS * $EXPORT_CELL
-	Local $hBmp = _GDIPlus_BitmapCreateFromScan0($iW, $iH)
-	Local $hCtx = _GDIPlus_ImageGetGraphicsContext($hBmp)
-	Local $hBlack = _GDIPlus_BrushCreateSolid(0xFF000000)
-
-	Local $aF[$NBYTES], $iNum = 0, $iOut = $iFrames * $EXPORT_PASSES, $iPass, $f
+	; 1 bit per cell, MSB first, 96x54 = 12 bytes per row: exactly ffmpeg's "monow" rawvideo layout
+	Local $hRaw = FileOpen($sDir & "\frames.raw", 2 + 16)
+	Local $aF[$NBYTES], $tF = DllStructCreate("byte[" & $NBYTES & "]")
+	Local $i, $f, $iPass, $iNum = 0, $iOut = $iFrames * $EXPORT_PASSES
 	For $iPass = 1 To $EXPORT_PASSES
 		For $f = 0 To $iFrames - 1
 			_BuildFrame($bData, $f, $iFrames, $aF)
-			_DrawFrame($hCtx, $aF, $EXPORT_CELL, $hBlack)
-			_GDIPlus_ImageSaveToFile($hBmp, $sDir & "\frame_" & StringFormat("%06d", $iNum) & ".png")
+			For $i = 0 To $NBYTES - 1
+				DllStructSetData($tF, 1, $aF[$i], $i + 1)
+			Next
+			FileWrite($hRaw, DllStructGetData($tF, 1))
 			$iNum += 1
-			If Mod($iNum, 10) = 0 Then ToolTip("Exporting " & $iNum & " / " & $iOut & "   (End = abort)", 0, 0)
+			If Mod($iNum, 50) = 0 Then ToolTip("Exporting " & $iNum & " / " & $iOut, 0, 0)
 		Next
 	Next
+	FileClose($hRaw)
 	ToolTip("")
 
 	Local $sFF = @ScriptDir & "\ffmpeg.exe"
 	Local $sBat = "@echo off" & @CRLF & "set FF=ffmpeg" & @CRLF & _
 			"if exist """ & $sFF & """ set FF=""" & $sFF & """" & @CRLF & _
-			"%FF% -y -framerate " & ($EXPORT_VFPS / $EXPORT_REPEAT) & " -i frame_%%06d.png -r " & $EXPORT_VFPS & _
-			" -c:v libx264 -preset slow -crf 14 -pix_fmt yuv420p -g " & $EXPORT_VFPS & " brainvc.mp4" & @CRLF & "pause" & @CRLF
+			"%FF% -y -f rawvideo -pix_fmt monow -video_size " & $COLS & "x" & $ROWS & " -framerate " & ($EXPORT_VFPS / $EXPORT_REPEAT) & _
+			" -i frames.raw -vf ""format=gray,scale=" & ($COLS * $EXPORT_CELL) & ":" & ($ROWS * $EXPORT_CELL) & ":flags=neighbor,format=yuv420p"" -r " & $EXPORT_VFPS & _
+			" -c:v libx264 -preset slow -crf 14 -g " & $EXPORT_VFPS & " brainvc.mp4" & @CRLF & "pause" & @CRLF
 	Local $hBat = FileOpen($sDir & "\make_video.bat", 2)
 	FileWrite($hBat, $sBat)
 	FileClose($hBat)
