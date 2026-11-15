@@ -1,8 +1,9 @@
-; BrAiNVC - optical data channel, step 3 (128x72 grid + erasure coding across frames)
-; Usage:  brainvc.au3 enc     = live encoder (shows frames in a window)
-;         brainvc.au3 scan    = scanner (drag the red frame over the encoder window / video player)
-;         brainvc.au3 export  = write frames.raw + make_video.bat (ffmpeg builds the video)
-;         no argument         = chooser
+; BrAiNVC - optical data channel, step 4 (settings menu, settings are stored in brainvc.ini)
+; Usage:  brainvc.au3                      = settings menu (start the modes from there)
+;         brainvc.au3 enc | scan | export  = start a mode directly with the saved settings
+;   enc     = live encoder (shows frames in a window)
+;   scan    = scanner (drag the red frame over the encoder window / video player)
+;   export  = write frames.raw + make_video.bat (ffmpeg builds the video)
 ; Scanner keys: PgUp/PgDn = resize frame +/-10px, numpad +/- = +/-1px, Home = save partial, End = quit
 ;
 ; Error correction: frames are sent in groups of FEC_K data frames + FEC_M parity frames
@@ -13,40 +14,54 @@
 #include <WinAPI.au3>
 #include <GUIConstantsEx.au3>
 #include <WindowsConstants.au3>
+#include <ComboConstants.au3>
+#include <EditConstants.au3>
 #include <Math.au3>
 
 DllCall("user32.dll", "bool", "SetProcessDPIAware")
 
+Global Const $INI = @ScriptDir & "\brainvc.ini"
+Global Const $SEC = "brainvc"
+Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mVfps, $mDfps, $mPass, $mInfo
 ; ---- frame layout (16:9 grid, COLS*ROWS must be divisible by 8) -------
-Global Const $COLS = 128, $ROWS = 72
-Global Const $NCELLS = $COLS * $ROWS       ; 9216 cells = 9216 bits
-Global Const $NBYTES = Int($NCELLS / 8)    ; 1152 bytes per frame
-Global Const $HDR = 10                     ; n(2) N(2) fileLen(4) crc(2)
-Global Const $PAY = $NBYTES - $HDR         ; 1142 payload bytes per frame
-Global Const $BORDER = 6
+Global $COLS = Int(_Cfg("Cols", 128)), $ROWS = Int(_Cfg("Rows", 72))
+If $COLS < 16 Or $ROWS < 9 Or Mod($COLS * $ROWS, 8) <> 0 Then
+	$COLS = 128
+	$ROWS = 72
+EndIf
+Global $NCELLS = $COLS * $ROWS             ; e.g. 9216 cells = 9216 bits
+Global $NBYTES = Int($NCELLS / 8)          ; e.g. 1152 bytes per frame
+Global $HDR = 10                           ; n(2) N(2) fileLen(4) crc(2)
+Global $PAY = $NBYTES - $HDR               ; payload bytes per frame
+Global $BORDER = 6
 
 ; ---- error correction (encoder and scanner must use the same values) --
-Global Const $FEC_K = 8                    ; data frames per group
-Global Const $FEC_M = 2                    ; parity frames per group (25% overhead, fixes 2 lost frames per group)
-Global Const $FEC_S = $FEC_K + $FEC_M
+Global $FEC_K = Int(_Cfg("FecK", 8))       ; data frames per group
+Global $FEC_M = Int(_Cfg("FecM", 2))       ; parity frames per group
+If $FEC_K < 1 Or $FEC_M < 1 Or $FEC_K + $FEC_M > 255 Then
+	$FEC_K = 8
+	$FEC_M = 2
+EndIf
+Global $FEC_S = $FEC_K + $FEC_M
 
 ; ---- tuning: live encoder / scanner ---------------------------------
-Global $CELL = 8                           ; live encoder cell px: 8 = 1024x576 window
-Global $HOLD_MS = 150                      ; live encoder: time per frame; keep it above the scanner period (see tooltip)
-Global $SHUFFLE = False                    ; True = random frame order per pass
-Global $JITTER_PCT = 0                     ; live encoder: random extra hold 0..x% (only needed if the scanner is SLOWER than the frame rate)
-Global $SAMPLES = 1                        ; scanner samples per cell: 1 = center only (fast), 5 = robust
-Global $g_iW = 1024, $g_iH = 576               ; scanner frame size in px (any width, 16:9, resized with PgUp/PgDn and numpad +/-)
+Global $CELL = Int(_Cfg("Cell", 8))                      ; live encoder cell px
+Global $HOLD_MS = Int(_Cfg("HoldMs", 150))               ; live encoder: time per frame
+Global $SHUFFLE = (Int(_Cfg("Shuffle", 0)) = 1)          ; True = random frame order per pass
+Global $JITTER_PCT = Int(_Cfg("JitterPct", 0))           ; live encoder: random extra hold 0..x%
+Global $SAMPLES = Int(_Cfg("Samples", 1))                ; scanner samples per cell: 1 (fast), 3, 5 (robust)
+If $SAMPLES <> 1 And $SAMPLES <> 3 And $SAMPLES <> 5 Then $SAMPLES = 1
+Global $g_iW = Int(_Cfg("ScanWidth", 1024)), $g_iH = Round($g_iW * $ROWS / $COLS)   ; scanner frame size in px
 Global $g_hGUI, $g_aBorder[4]
 Global $g_oDict, $g_iN = 0, $g_iLen = 0
 Global $g_iThr = 0, $g_iFail = 0           ; sticky brightness threshold of the scanner
 
 ; ---- tuning: video export -------------------------------------------
-Global $EXPORT_CELL = 15                   ; video upscale per cell: 15 = 1920x1080
-Global $EXPORT_VFPS = 60                   ; video frame rate (60 = finer timing steps, YouTube gives 1080p60 more bitrate)
-Global $EXPORT_DATA_FPS = 10              ; data frames per second; keep it clearly below the scanner's scans/s
-
-Global $EXPORT_PASSES = 2                  ; how many times the whole file is repeated in the video
+Global $EXPORT_CELL = Int(1920 / $COLS)                  ; video upscale per cell (1920 px wide video)
+Global $EXPORT_VFPS = Int(_Cfg("VideoFps", 60))          ; video frame rate
+Global $EXPORT_DATA_FPS = Number(_Cfg("DataFps", 10))    ; data frames per second
+Global $EXPORT_PASSES = Int(_Cfg("Passes", 2))           ; how many times the whole file is repeated in the video
+If $EXPORT_DATA_FPS > $EXPORT_VFPS / 2 Then $EXPORT_DATA_FPS = $EXPORT_VFPS / 2
 
 ; ---- tables ---------------------------------------------------------
 Global $g_aCrcTab[256]
@@ -55,22 +70,12 @@ Global $g_aCoef[$FEC_M][$FEC_K]
 Global $g_aMT[$FEC_M * $FEC_K][256]        ; multiplication tables for the Cauchy coefficients
 Global $g_iGrpCache = -1, $g_aParity[$FEC_M][$PAY]
 
+Global $g_sMode = ""
+If $CmdLine[0] > 0 Then $g_sMode = $CmdLine[1]
+If $g_sMode = "" Then _Menu()
 _InitCrc()
 _InitFec()
-Local $sMode = ""
-If $CmdLine[0] > 0 Then $sMode = $CmdLine[1]
-If $sMode = "" Then
-	Local $iAns = MsgBox(3 + 32, "BrAiNVC", "Yes = Live encoder" & @CRLF & "No = Scanner" & @CRLF & "Cancel = Export video data (ffmpeg)")
-	Switch $iAns
-		Case 6
-			$sMode = "enc"
-		Case 7
-			$sMode = "scan"
-		Case Else
-			$sMode = "export"
-	EndSwitch
-EndIf
-Switch $sMode
+Switch $g_sMode
 	Case "enc"
 		_Encoder()
 	Case "export"
@@ -369,9 +374,6 @@ Func _Export()
 	If @error Then Exit
 	Local $sDir = FileSelectFolder("Output folder (frames.raw + make_video.bat)", @ScriptDir)
 	If @error Then Exit
-	; data frames per second: limited by the scanner (scans/s in its tooltip) and by the video (at least 2 video frames per data frame)
-	Local $sRate = InputBox("BrAiNVC", "Data frames per second (video runs at " & $EXPORT_VFPS & " fps, max " & Int($EXPORT_VFPS / 2) & "):", $EXPORT_DATA_FPS, "", 360, 140)
-	If Not @error And Number($sRate) > 0 Then $EXPORT_DATA_FPS = _Min(Number($sRate), $EXPORT_VFPS / 2)
 	Local $bData = _ReadFile($sFile)
 	Local $iLen = BinaryLen($bData)
 	Local $iN = _FrameCount($iLen)
@@ -758,3 +760,171 @@ Func _Grab(ByRef $aB, $x, $y)
 	_WinAPI_DeleteObject($hHBmp)
 	Return $bOk
 EndFunc   ;==>_Grab
+
+; =====================================================================
+; settings menu (writes brainvc.ini, then starts the chosen mode in a fresh process)
+; =====================================================================
+
+
+Func _Cfg($sKey, $vDef)
+	Return IniRead($INI, $SEC, $sKey, $vDef)
+EndFunc   ;==>_Cfg
+
+; read a number field and clamp it
+Func _Num($id, $iMin, $iMax)
+	Local $v = Int(GUICtrlRead($id))
+	If $v < $iMin Then $v = $iMin
+	If $v > $iMax Then $v = $iMax
+	Return $v
+EndFunc   ;==>_Num
+
+Func _SetCombo($id, $sList, $sSel)
+	GUICtrlSetData($id, "")
+	GUICtrlSetData($id, $sList, $sSel)
+EndFunc   ;==>_SetCombo
+
+Func _Menu()
+	GUICreate("BrAiNVC - settings", 450, 600)
+	GUISetFont(9, 400, 0, "Segoe UI")
+	Local $y
+
+	$y = 10
+	GUICtrlCreateGroup("Frame format - encoder and scanner must match", 10, $y, 430, 112)
+	GUICtrlCreateLabel("Grid (cells)", 25, $y + 26, 160, 18)
+	$mGrid = GUICtrlCreateCombo("", 190, $y + 22, 110, 22, $CBS_DROPDOWNLIST)
+	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", $COLS & "x" & $ROWS)
+	GUICtrlSetTip($mGrid, "More cells = more data per frame, but smaller cells are harder to read after video compression.")
+	GUICtrlCreateLabel("Data frames per group (K)", 25, $y + 52, 160, 18)
+	$mK = GUICtrlCreateInput($FEC_K, 190, $y + 48, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mK, "Larger K = less overhead, but a longer wait until a group can be rebuilt.")
+	GUICtrlCreateLabel("Parity frames per group (M)", 25, $y + 78, 160, 18)
+	$mM = GUICtrlCreateInput($FEC_M, 190, $y + 74, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mM, "Up to M lost frames per group of K+M are rebuilt. Overhead = M / (K+M).")
+	GUICtrlCreateGroup("", -99, -99, 1, 1)
+
+	$y = 132
+	GUICtrlCreateGroup("Live encoder", 10, $y, 430, 128)
+	GUICtrlCreateLabel("Cell size (px)", 25, $y + 26, 160, 18)
+	$mCell = GUICtrlCreateInput($CELL, 190, $y + 22, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mCell, "Window size = grid x cell size (4-16)")
+	GUICtrlCreateLabel("Hold per frame (ms)", 25, $y + 52, 160, 18)
+	$mHold = GUICtrlCreateInput($HOLD_MS, 190, $y + 48, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mHold, "Keep this above the scanner's scan period (1000 / scans per second).")
+	GUICtrlCreateLabel("Random extra hold (%)", 25, $y + 78, 160, 18)
+	$mJit = GUICtrlCreateInput($JITTER_PCT, 190, $y + 74, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mJit, "Only needed if the scanner is slower than the frame rate (breaks the rhythm lock).")
+	$mShuf = GUICtrlCreateCheckbox("Shuffle frame order each pass", 25, $y + 100, 260, 20)
+	If $SHUFFLE Then GUICtrlSetState($mShuf, $GUI_CHECKED)
+	GUICtrlCreateGroup("", -99, -99, 1, 1)
+
+	$y = 270
+	GUICtrlCreateGroup("Scanner", 10, $y, 430, 80)
+	GUICtrlCreateLabel("Samples per cell", 25, $y + 26, 160, 18)
+	$mSamp = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
+	_SetCombo($mSamp, "1|3|5", $SAMPLES)
+	GUICtrlSetTip($mSamp, "1 = fastest, 3 or 5 = more robust for blurry / compressed video.")
+	GUICtrlCreateLabel("Start width (px)", 25, $y + 52, 160, 18)
+	$mWidth = GUICtrlCreateInput($g_iW, 190, $y + 48, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mWidth, "Width of the red frame at start (256-3000). Resize it later with PgUp/PgDn and numpad +/-.")
+	GUICtrlCreateGroup("", -99, -99, 1, 1)
+
+	$y = 360
+	GUICtrlCreateGroup("Video export", 10, $y, 430, 108)
+	GUICtrlCreateLabel("Video frame rate (fps)", 25, $y + 26, 160, 18)
+	$mVfps = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
+	_SetCombo($mVfps, "30|60", $EXPORT_VFPS)
+	$mDfps = GUICtrlCreateInput($EXPORT_DATA_FPS, 190, $y + 48, 60, 22, $ES_NUMBER)
+	GUICtrlCreateLabel("Data frames per second", 25, $y + 52, 160, 18)
+	GUICtrlSetTip($mDfps, "Keep it clearly below the scanner's scans/s. Max = video fps / 2.")
+	GUICtrlCreateLabel("Repeats of the whole file", 25, $y + 78, 160, 18)
+	$mPass = GUICtrlCreateInput($EXPORT_PASSES, 190, $y + 74, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mPass, "More repeats = lost frames get another chance (1-5).")
+	GUICtrlCreateGroup("", -99, -99, 1, 1)
+
+	$mInfo = GUICtrlCreateLabel("", 15, 478, 420, 62)
+
+	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 550, 100, 32)
+	Local $bScan = GUICtrlCreateButton("Scanner", 115, 550, 100, 32)
+	Local $bExp = GUICtrlCreateButton("Export video", 220, 550, 100, 32)
+	Local $bDef = GUICtrlCreateButton("Defaults", 325, 550, 115, 32)
+	GUISetState(@SW_SHOW)
+
+	Local $iMsg, $hT = TimerInit()
+	_MenuInfo()
+	While 1
+		$iMsg = GUIGetMsg()
+		Switch $iMsg
+			Case $GUI_EVENT_CLOSE
+				Exit
+			Case $bEnc
+				_MenuStart("enc")
+			Case $bScan
+				_MenuStart("scan")
+			Case $bExp
+				_MenuStart("export")
+			Case $bDef
+				_MenuDefaults()
+		EndSwitch
+		If TimerDiff($hT) > 250 Then
+			_MenuInfo()
+			$hT = TimerInit()
+		EndIf
+	WEnd
+EndFunc   ;==>_Menu
+
+; live estimate under the fields
+Func _MenuInfo()
+	Local $aG = StringSplit(GUICtrlRead($mGrid), "x", 2)
+	If UBound($aG) < 2 Then Return
+	Local $c = Int($aG[0]), $r = Int($aG[1])
+	Local $iPay = Int($c * $r / 8) - 10
+	Local $k = _Num($mK, 1, 64), $m = _Num($mM, 1, 8), $iCell = _Num($mCell, 4, 16)
+	Local $iV = Int(GUICtrlRead($mVfps)), $fD = _Num($mDfps, 1, Int($iV / 2))
+	Local $iEx = Int(1920 / $c)
+	GUICtrlSetData($mInfo, "Frame: " & Int($c * $r / 8) & " bytes (" & $iPay & " payload), error correction overhead " & Round($m / ($k + $m) * 100) & " %" & @CRLF & _
+			"Throughput at " & $fD & " data frames/s: about " & Round($fD * $iPay * $k / ($k + $m) / 1024, 1) & " kB/s" & @CRLF & _
+			"Export video: " & $c * $iEx & "x" & $r * $iEx & " (cell " & $iEx & " px)   Live window: " & $c * $iCell & "x" & $r * $iCell & " px")
+EndFunc   ;==>_MenuInfo
+
+Func _MenuSave()
+	Local $aG = StringSplit(GUICtrlRead($mGrid), "x", 2)
+	If UBound($aG) = 2 Then
+		IniWrite($INI, $SEC, "Cols", $aG[0])
+		IniWrite($INI, $SEC, "Rows", $aG[1])
+	EndIf
+	IniWrite($INI, $SEC, "FecK", _Num($mK, 1, 64))
+	IniWrite($INI, $SEC, "FecM", _Num($mM, 1, 8))
+	IniWrite($INI, $SEC, "Cell", _Num($mCell, 4, 16))
+	IniWrite($INI, $SEC, "HoldMs", _Num($mHold, 30, 2000))
+	IniWrite($INI, $SEC, "JitterPct", _Num($mJit, 0, 100))
+	IniWrite($INI, $SEC, "Shuffle", (GUICtrlRead($mShuf) = $GUI_CHECKED) ? 1 : 0)
+	IniWrite($INI, $SEC, "Samples", Int(GUICtrlRead($mSamp)))
+	IniWrite($INI, $SEC, "ScanWidth", _Num($mWidth, 256, 3000))
+	Local $iV = Int(GUICtrlRead($mVfps))
+	IniWrite($INI, $SEC, "VideoFps", $iV)
+	IniWrite($INI, $SEC, "DataFps", _Num($mDfps, 1, Int($iV / 2)))
+	IniWrite($INI, $SEC, "Passes", _Num($mPass, 1, 5))
+EndFunc   ;==>_MenuSave
+
+; save, start the mode as a new process (so every setting, also grid / FEC, takes effect), close the menu
+Func _MenuStart($sMode)
+	_MenuSave()
+	Local $sCmd = @Compiled ? '"' & @ScriptFullPath & '"' : '"' & @AutoItExe & '" "' & @ScriptFullPath & '"'
+	Run($sCmd & " " & $sMode, @ScriptDir)
+	Exit
+EndFunc   ;==>_MenuStart
+
+Func _MenuDefaults()
+	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", "128x72")
+	GUICtrlSetData($mK, 8)
+	GUICtrlSetData($mM, 2)
+	GUICtrlSetData($mCell, 8)
+	GUICtrlSetData($mHold, 150)
+	GUICtrlSetData($mJit, 0)
+	GUICtrlSetState($mShuf, $GUI_UNCHECKED)
+	_SetCombo($mSamp, "1|3|5", "1")
+	GUICtrlSetData($mWidth, 1024)
+	_SetCombo($mVfps, "30|60", "60")
+	GUICtrlSetData($mDfps, 10)
+	GUICtrlSetData($mPass, 2)
+EndFunc   ;==>_MenuDefaults
