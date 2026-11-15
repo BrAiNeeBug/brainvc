@@ -1,7 +1,7 @@
 latest encoding:
 https://www.youtube.com/watch?v=vNelfvGHPeI
 
-latest decoding (attempt 3 and running perfectly :D
+latest decoding:
 https://www.youtube.com/watch?v=-0ewq3weVHo
 
 
