@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrAiNVC web</title>
+<style>
+:root{--bg:#101216;--card:#181b21;--line:#2a2f38;--txt:#e6e8ec;--dim:#8a93a2;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0;font-weight:600}
+h1 span{color:var(--dim);font-weight:400;font-size:13px;margin-left:6px}
+nav{display:flex;gap:6px;margin-left:auto}
+main{max-width:1000px;margin:0 auto;padding:14px 16px 40px}
+button,select,input{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+button{cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.on,button.primary{background:var(--acc);color:#04202e;border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+input[type=number]{width:80px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}
+.dim{color:var(--dim)}
+.stage{position:relative;width:100%;max-width:960px;min-height:140px;background:#000;border-radius:8px;overflow:hidden}
+.stage video{display:block;width:100%;height:auto}
+.stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}
+.pv{image-rendering:pixelated;width:256px;height:144px;border:1px solid var(--line);background:#000}
+.bar{height:8px;background:#0b0d10;border-radius:4px;overflow:hidden;margin:6px 0}
+.bar>i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
+.stats{font-variant-numeric:tabular-nums}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+summary{cursor:pointer;color:var(--dim)}
+label{display:inline-flex;align-items:center;gap:6px}
+#tcWrap{background:#222;padding:14px;border-radius:8px;display:flex;justify-content:center}
+#tcWrap:fullscreen{align-items:center;padding:0;background:#000}
+#tc{image-rendering:pixelated;background:#fff;border:14px solid #fff;max-width:100%;aspect-ratio:16/9;width:min(100%,calc((100vh - 260px) * 16 / 9))}
+#tcWrap:fullscreen #tc{width:min(100vw,calc(100vh * 16 / 9));border-width:12px}
+audio{width:100%;max-width:520px}
+</style>
+</head>
+<body>
+<header>
+  <h1>BrAiNVC<span>optical data link, web edition</span></h1>
+  <nav>
+    <button id="tabRx" class="on">Receive</button>
+    <button id="tabTx">Send</button>
+  </nav>
+</header>
+<main>
+
+<details class="card" id="fmtBox">
+  <summary>Format (sender and receiver must use the same values)</summary>
+  <div class="row">
+    <label>Grid <select id="selGrid"><option>96x54</option><option selected>128x72</option><option>160x90</option><option>192x108</option></select></label>
+    <label>K data <input id="numK" type="number" min="1" max="64" value="8"></label>
+    <label>M parity <input id="numM" type="number" min="1" max="8" value="2"></label>
+    <span class="dim">Same frame format as brainvc.au3 (header, CRC16, Reed-Solomon over groups of K+M frames).</span>
+  </div>
+</details>
+
+<!-- ============================ RECEIVE ============================ -->
+<section id="rx">
+  <div class="row">
+    <button id="bScreen">Screen / window</button>
+    <button id="bCam">Camera</button>
+    <button id="bFile">Video file&hellip;</button>
+    <input id="vfile" type="file" accept="video/*" hidden>
+    <button id="bStop" disabled>Stop</button>
+    <span class="dim">&nbsp;Mode:</span>
+    <label><input type="radio" name="mode" value="live" checked> Live play</label>
+    <label><input type="radio" name="mode" value="save"> Save file</label>
+  </div>
+
+  <div class="stage"><video id="vid" playsinline muted></video><canvas id="ov"></canvas></div>
+  <div class="row">
+    <button id="bRot" title="Rotate which corner is the top-left of the code">&#8635; Rotate corners</button>
+    <button id="bMir" title="Mirror horizontally (e.g. selfie camera)">&#8596; Mirror</button>
+    <button id="bRst">Reset corners</button>
+    <span class="dim">Drag the four corners onto the corners of the code. TL must match the code's top-left.</span>
+  </div>
+
+  <div class="row" style="align-items:flex-start">
+    <div><div class="dim">What the scanner sees</div><canvas id="pv" class="pv" width="128" height="72"></canvas></div>
+    <div class="stats" id="stats" style="min-width:260px"></div>
+  </div>
+  <div class="bar"><i id="barG"></i></div>
+
+  <div class="card">
+    <div class="row" style="margin-top:0">
+      <audio id="aud" controls></audio>
+    </div>
+    <div class="row">
+      <button id="bPartial" disabled>Save partial</button>
+      <button id="bDl" class="primary" disabled>Download</button>
+      <button id="bReset">Reset</button>
+    </div>
+    <div id="status" class="dim"></div>
+  </div>
+  <div class="dim">Tips: with a camera keep the code big and the phone steady, use a low data rate (about 5&ndash;8 frames/s) and avoid reflections.
+  Live play works for MP3 and WebM/Opus streams; other files are saved and, if they are audio, played after the transfer completes.</div>
+</section>
+
+<!-- ============================== SEND ============================== -->
+<section id="tx" hidden>
+  <div class="row">
+    <input id="sfile" type="file">
+    <label>Data frames/s <input id="numFps" type="number" min="1" max="30" value="10"></label>
+    <button id="bStart" class="primary" disabled>Start</button>
+    <button id="bHalt" disabled>Stop</button>
+    <button id="bFull" disabled>Fullscreen</button>
+  </div>
+  <div id="tcWrap"><canvas id="tc" width="128" height="72"></canvas></div>
+  <div class="card stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start.</div>
+  <div class="dim">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
+  Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz).</div>
+</section>
+
+</main>
+
+<script>
+"use strict";
+// =====================================================================
+// ===== CORE START (pure functions, also used by the Node test) =====
+// =====================================================================
+const HDR = 10;                                   // n(2) N(2) fileLen(4) crc(2)
+const GF_EXP = new Uint8Array(512), GF_LOG = new Uint8Array(256);
+(() => {
+  let x = 1;
+  for (let i = 0; i < 255; i++) { GF_EXP[i] = x; GF_LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11D; }
+  for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+})();
+const gfMul = (a, b) => (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]];
+const gfInv = a => GF_EXP[255 - GF_LOG[a]];
+
+const CRC_TAB = new Uint16Array(256);
+(() => {
+  for (let i = 0; i < 256; i++) {
+    let c = i << 8;
+    for (let k = 0; k < 8; k++) c = (c & 0x8000) ? (((c << 1) ^ 0x1021) & 0xFFFF) : ((c << 1) & 0xFFFF);
+    CRC_TAB[i] = c;
+  }
+})();
+function frameCrc(b, nbytes) {
+  let crc = 0xFFFF;
+  for (let i = 0; i < 8; i++) crc = ((crc << 8) & 0xFFFF) ^ CRC_TAB[((crc >> 8) ^ b[i]) & 0xFF];
+  for (let i = HDR; i < nbytes; i++) crc = ((crc << 8) & 0xFFFF) ^ CRC_TAB[((crc >> 8) ^ b[i]) & 0xFF];
+  return crc;
+}
+
+function makeFormat(cols, rows, K, M) {
+  const ncells = cols * rows, nbytes = ncells >> 3;
+  return { cols, rows, K, M, S: K + M, ncells, nbytes, pay: nbytes - HDR };
+}
+
+// Cauchy matrix coef[j][i] = 1 / (j xor (M + i)), plus a multiplication table per coefficient
+const _fecCache = new Map();
+function fecTables(K, M) {
+  const key = K + "x" + M;
+  if (_fecCache.has(key)) return _fecCache.get(key);
+  const coef = [], mt = [];
+  for (let j = 0; j < M; j++) {
+    coef.push([]);
+    for (let i = 0; i < K; i++) {
+      const c = gfInv(j ^ (M + i));
+      coef[j].push(c);
+      const t = new Uint8Array(256);
+      for (let v = 0; v < 256; v++) t[v] = gfMul(c, v);
+      mt[j * K + i] = t;
+    }
+  }
+  const t = { coef, mt };
+  _fecCache.set(key, t);
+  return t;
+}
+
+function gfInvMat(A, d) {
+  const m = A.map((row, r) => [...row, ...Array.from({ length: d }, (_, c) => (r === c ? 1 : 0))]);
+  for (let c = 0; c < d; c++) {
+    let p = -1;
+    for (let r = c; r < d; r++) if (m[r][c]) { p = r; break; }
+    if (p < 0) return null;
+    [m[c], m[p]] = [m[p], m[c]];
+    const f = gfInv(m[c][c]);
+    m[c] = m[c].map(v => gfMul(v, f));
+    for (let r = 0; r < d; r++) {
+      if (r !== c && m[r][c]) {
+        const g = m[r][c];
+        m[r] = m[r].map((v, k) => v ^ gfMul(g, m[c][k]));
+      }
+    }
+  }
+  return m.map(row => row.slice(d));
+}
+
+// ---------------------------------------------------------------- encoder
+class Encoder {
+  constructor(fmt, data) {
+    this.fmt = fmt; this.data = data; this.L = data.length;
+    const D = Math.max(1, Math.ceil(this.L / fmt.pay));
+    this.G = Math.ceil(D / fmt.K);
+    this.N = this.G * fmt.S;
+    this.t = fecTables(fmt.K, fmt.M);
+    this.pg = -1; this.par = null;
+  }
+  payload(d) {
+    const out = new Uint8Array(this.fmt.pay), s = d * this.fmt.pay;
+    if (s < this.L) out.set(this.data.subarray(s, Math.min(this.L, s + this.fmt.pay)));
+    return out;
+  }
+  calcParity(g) {
+    const { K, M, pay } = this.fmt;
+    const par = Array.from({ length: M }, () => new Uint8Array(pay));
+    for (let i = 0; i < K; i++) {
+      const d = this.payload(g * K + i);
+      for (let j = 0; j < M; j++) {
+        const t = this.t.mt[j * K + i], p = par[j];
+        for (let b = 0; b < pay; b++) p[b] ^= t[d[b]];
+      }
+    }
+    this.pg = g; this.par = par;
+  }
+  frame(n) {
+    const { K, S, nbytes } = this.fmt;
+    const g = Math.floor(n / S), t = n % S;
+    const f = new Uint8Array(nbytes);
+    let p;
+    if (t < K) p = this.payload(g * K + t);
+    else { if (this.pg !== g) this.calcParity(g); p = this.par[t - K]; }
+    f.set(p, HDR);
+    f[0] = n >> 8; f[1] = n & 255; f[2] = this.N >> 8; f[3] = this.N & 255;
+    f[4] = (this.L >>> 24) & 255; f[5] = (this.L >>> 16) & 255; f[6] = (this.L >>> 8) & 255; f[7] = this.L & 255;
+    const crc = frameCrc(f, nbytes);
+    f[8] = crc >> 8; f[9] = crc & 255;
+    return f;
+  }
+}
+
+// -------------------------------------------------------------- assembler
+class Assembler {
+  constructor(fmt) {
+    this.fmt = fmt; this.frames = new Map(); this.N = 0; this.L = 0; this.G = 0; this.have = new Uint8Array(0);
+    this.t = fecTables(fmt.K, fmt.M); this.onReset = null;
+  }
+  add(n, N, L, payload) {
+    if (this.N !== N || this.L !== L) {            // new stream: start over
+      this.frames.clear(); this.N = N; this.L = L; this.G = N / this.fmt.S; this.have = new Uint8Array(this.G);
+      if (this.onReset) this.onReset();
+    }
+    if (this.frames.has(n)) return false;
+    this.frames.set(n, payload);
+    this.have[Math.floor(n / this.fmt.S)]++;
+    return true;
+  }
+  groupReady(g) { return this.have[g] >= this.fmt.K; }
+  allReady() {
+    if (!this.N) return false;
+    for (let g = 0; g < this.G; g++) if (this.have[g] < this.fmt.K) return false;
+    return true;
+  }
+  readyGroups() { let c = 0; for (let g = 0; g < this.G; g++) if (this.have[g] >= this.fmt.K) c++; return c; }
+  // returns { data: [K payloads], fixed } or null when fewer than K frames of the group are known
+  recoverGroup(g) {
+    const { K, S, pay } = this.fmt, n0 = g * S;
+    const known = [], miss = [];
+    for (let i = 0; i < K; i++) {
+      const p = this.frames.get(n0 + i);
+      known.push(p || null);
+      if (!p) miss.push(i);
+    }
+    if (!miss.length) return { data: known, fixed: 0 };
+    const parAv = [];
+    for (let j = 0; j < this.fmt.M; j++) if (this.frames.has(n0 + K + j)) parAv.push(j);
+    const d = miss.length;
+    if (d > parAv.length) return null;
+    const use = parAv.slice(0, d);
+    const A = use.map(j => miss.map(i => this.t.coef[j][i]));
+    const inv = gfInvMat(A, d);
+    if (!inv) return null;
+    const P = use.map(j => this.frames.get(n0 + K + j));
+    const out = miss.map(() => new Uint8Array(pay));
+    const rhs = new Uint8Array(d);
+    for (let b = 0; b < pay; b++) {
+      for (let r = 0; r < d; r++) {
+        let v = P[r][b];
+        const mtRow = use[r] * K;
+        for (let i = 0; i < K; i++) if (known[i]) v ^= this.t.mt[mtRow + i][known[i][b]];
+        rhs[r] = v;
+      }
+      for (let c = 0; c < d; c++) {
+        let u = 0;
+        for (let r = 0; r < d; r++) u ^= gfMul(inv[c][r], rhs[r]);
+        out[c][b] = u;
+      }
+    }
+    const data = known.slice();
+    miss.forEach((i, c) => { data[i] = out[c]; });
+    return { data, fixed: d };
+  }
+  // whole file; unrecoverable data frames are zero filled
+  assemble() {
+    const { K, pay } = this.fmt;
+    const out = new Uint8Array(this.G * K * pay);
+    let fixed = 0, lost = 0;
+    for (let g = 0; g < this.G; g++) {
+      const r = this.recoverGroup(g);
+      for (let i = 0; i < K; i++) {
+        let p = null;
+        if (r) p = r.data[i]; else p = this.frames.get(g * this.fmt.S + i) || null;
+        if (p) out.set(p, (g * K + i) * pay); else lost++;
+      }
+      if (r) fixed += r.fixed;
+    }
+    return { bytes: out.subarray(0, this.L), fixed, lost };
+  }
+}
+
+// ------------------------------------------------------- scanner (sampling)
+// quad = 4 corners in video pixels: TL, TR, BR, BL. Maps the unit square onto the quad (projective).
+function quadMap(q) {
+  const [x0, y0] = q[0], [x1, y1] = q[1], [x2, y2] = q[2], [x3, y3] = q[3];
+  const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3;
+  const dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+  let g = 0, h = 0;
+  if (Math.abs(dx3) > 1e-9 || Math.abs(dy3) > 1e-9) {
+    const den = dx1 * dy2 - dy1 * dx2;
+    g = (dx3 * dy2 - dy3 * dx2) / den;
+    h = (dx1 * dy3 - dy1 * dx3) / den;
+  }
+  const a = x1 - x0 + g * x1, b = x3 - x0 + h * x3, c = x0;
+  const d = y1 - y0 + g * y1, e = y3 - y0 + h * y3, f = y0;
+  return (u, v) => { const w = g * u + h * v + 1; return [(a * u + b * v + c) / w, (d * u + e * v + f) / w]; };
+}
+
+// For every cell: 5 sample positions (center + 4 quarter points), as indexes of the green channel
+// inside the RGBA data of the region-of-interest canvas.
+function buildSampler(fmt, quadPx, vw, vh, maxW) {
+  const xs = quadPx.map(p => p[0]), ys = quadPx.map(p => p[1]);
+  let bx = Math.max(0, Math.floor(Math.min(...xs)) - 2), by = Math.max(0, Math.floor(Math.min(...ys)) - 2);
+  let bx2 = Math.min(vw, Math.ceil(Math.max(...xs)) + 2), by2 = Math.min(vh, Math.ceil(Math.max(...ys)) + 2);
+  const bw = Math.max(1, bx2 - bx), bh = Math.max(1, by2 - by);
+  const scale = Math.min(1, maxW / bw);
+  const sw = Math.max(1, Math.round(bw * scale)), sh = Math.max(1, Math.round(bh * scale));
+  const map = quadMap(quadPx);
+  const idx = new Int32Array(fmt.ncells * 5);
+  const du = 0.25 / fmt.cols, dv = 0.25 / fmt.rows;
+  const offs = [[0, 0], [-du, -dv], [du, -dv], [-du, dv], [du, dv]];
+  for (let cy = 0; cy < fmt.rows; cy++) {
+    for (let cx = 0; cx < fmt.cols; cx++) {
+      const u0 = (cx + 0.5) / fmt.cols, v0 = (cy + 0.5) / fmt.rows;
+      const i = cy * fmt.cols + cx;
+      for (let k = 0; k < 5; k++) {
+        const [x, y] = map(u0 + offs[k][0], v0 + offs[k][1]);
+        const px = Math.min(sw - 1, Math.max(0, Math.round((x - bx) * scale)));
+        const py = Math.min(sh - 1, Math.max(0, Math.round((y - by) * scale)));
+        idx[i * 5 + k] = (py * sw + px) * 4 + 1;
+      }
+    }
+  }
+  return { bx, by, bw, bh, sw, sh, scale, idx, vw, vh };
+}
+function sampleLum(s, rgba, out) {
+  const n = s.idx.length / 5;
+  for (let i = 0; i < n; i++) {
+    const j = i * 5;
+    out[i] = ((rgba[s.idx[j]] + rgba[s.idx[j + 1]] + rgba[s.idx[j + 2]] + rgba[s.idx[j + 3]] + rgba[s.idx[j + 4]]) / 5) | 0;
+  }
+  return out;
+}
+function otsu(lum) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < lum.length; i++) hist[lum[i]]++;
+  const total = lum.length;
+  let sumAll = 0;
+  for (let t = 0; t < 256; t++) sumAll += t * hist[t];
+  let wB = 0, sumB = 0, best = -1, thr = 127, cB = 0, cF = 255;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mb = sumB / wB, mf = (sumAll - sumB) / wF;
+    const v = wB * wF * (mb - mf) * (mb - mf);
+    if (v > best) { best = v; thr = t; cB = mb; cF = mf; }
+  }
+  return { thr: thr + 1, contrast: cF - cB };      // cell is dark when lum < thr
+}
+function decodeFrame(fmt, lum) {
+  const { thr, contrast } = otsu(lum);
+  const res = { thr, contrast, frame: null };
+  if (contrast < 40) return res;
+  const bytes = new Uint8Array(fmt.nbytes);
+  for (let i = 0; i < fmt.ncells; i++) if (lum[i] < thr) bytes[i >> 3] |= 0x80 >> (i & 7);
+  const n = (bytes[0] << 8) | bytes[1], N = (bytes[2] << 8) | bytes[3];
+  if (N === 0 || n >= N || N % fmt.S !== 0) return res;
+  if (frameCrc(bytes, fmt.nbytes) !== ((bytes[8] << 8) | bytes[9])) return res;
+  const L = ((bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7]) >>> 0;
+  res.frame = { n, N, L, payload: bytes.slice(HDR) };
+  return res;
+}
+
+// ------------------------------------------------------------ file sniffing
+function sniff(b) {
+  const asc = (o, s) => b.length >= o + s.length && [...s].every((c, i) => b[o + i] === c.charCodeAt(0));
+  const bin = { ext: "bin", mime: "application/octet-stream", audio: false, live: null };
+  if (b.length < 4) return bin;
+  if (asc(0, "ID3") || (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0)) return { ext: "mp3", mime: "audio/mpeg", audio: true, live: ['audio/mpeg'], seq: true };
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return { ext: "webm", mime: "audio/webm", audio: true, live: ['audio/webm; codecs="opus"', 'audio/webm; codecs="vorbis"'], seq: false };
+  if (asc(0, "OggS")) return { ext: "ogg", mime: "audio/ogg", audio: true, live: null };
+  if (asc(0, "RIFF") && asc(8, "WAVE")) return { ext: "wav", mime: "audio/wav", audio: true, live: null };
+  if (asc(0, "fLaC")) return { ext: "flac", mime: "audio/flac", audio: true, live: null };
+  if (asc(4, "ftyp")) return { ext: "m4a", mime: "audio/mp4", audio: true, live: null };
+  if (b[0] === 0x89 && asc(1, "PNG")) return { ext: "png", mime: "image/png", audio: false, live: null };
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { ext: "jpg", mime: "image/jpeg", audio: false, live: null };
+  if (asc(0, "GIF8")) return { ext: "gif", mime: "image/gif", audio: false, live: null };
+  if (asc(0, "%PDF")) return { ext: "pdf", mime: "application/pdf", audio: false, live: null };
+  if (asc(0, "PK") && b[2] === 3 && b[3] === 4) return { ext: "zip", mime: "application/zip", audio: false, live: null };
+  let text = true;
+  for (let i = 0; i < Math.min(b.length, 512); i++) { const c = b[i]; if (c < 9 || (c > 13 && c < 32)) { text = false; break; } }
+  if (text) return { ext: "txt", mime: "text/plain", audio: false, live: null };
+  return bin;
+}
+// =====================================================================
+// ===== CORE END =====
+// =====================================================================
+
+// ------------------------------------------------------------------ UI glue
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("bvc_" + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("bvc_" + k, JSON.stringify(v)); } catch (e) {} }
+};
+
+// ---- format settings
+let fmt;
+function applyFormat() {
+  const [c, r] = $("selGrid").value.split("x").map(Number);
+  const K = clamp(parseInt($("numK").value) || 8, 1, 64), M = clamp(parseInt($("numM").value) || 2, 1, 8);
+  fmt = makeFormat(c, r, K, M);
+  store.set("fmt", { grid: $("selGrid").value, K, M });
+  $("tc").width = c; $("tc").height = r;
+  pv.width = c; pv.height = r;
+  samplerDirty = true;
+  resetReceiver();
+  enc = null; haltSend(); updateTxButtons();
+}
+const pv = $("pv"), pvCtx = pv.getContext("2d");
+{
+  const f = store.get("fmt", null);
+  if (f) { $("selGrid").value = f.grid; $("numK").value = f.K; $("numM").value = f.M; }
+}
+
+// ---- tabs
+function showTab(rx) {
+  $("rx").hidden = !rx; $("tx").hidden = rx;
+  $("tabRx").classList.toggle("on", rx); $("tabTx").classList.toggle("on", !rx);
+}
+$("tabRx").onclick = () => showTab(true);
+$("tabTx").onclick = () => showTab(false);
+
+// =========================================================== RECEIVE
+const vid = $("vid"), ov = $("ov"), ovCtx = ov.getContext("2d"), aud = $("aud");
+const roi = document.createElement("canvas"), rctx = roi.getContext("2d", { willReadFrequently: true });
+let stream = null, running = false, kind = "screen", quadN = null, sampler = null, samplerDirty = true;
+let lumBuf = null, asm = null, completed = false, result = null, resultUrl = null;
+let cntScan = 0, cntOk = 0, rateScan = 0, rateOk = 0, lastPv = 0, lastThr = 128;
+let drag = -1;
+const live = { nextG: 0, audio: null, info: null, busy: false, unsupported: false, waitG: -1, waitSince: 0, skipped: 0, ended: false };
+
+const defaultQuad = k => k === "camera" ? [[0.15, 0.2], [0.85, 0.2], [0.85, 0.8], [0.15, 0.8]]
+                                         : [[0.02, 0.02], [0.98, 0.02], [0.98, 0.98], [0.02, 0.98]];
+function loadQuad() { quadN = store.get("quad_" + kind, null) || defaultQuad(kind); samplerDirty = true; drawOverlay(); }
+function saveQuad() { store.set("quad_" + kind, quadN); }
+function mode() { return document.querySelector('input[name="mode"]:checked').value; }
+function setStatus(t, cls) { $("status").textContent = t; $("status").className = cls || "dim"; }
+
+function resetReceiver() {
+  asm = new Assembler(fmt);
+  asm.onReset = () => { completed = false; result = null; resetLive(); updateButtons(); };
+  completed = false; result = null; resetLive();
+  lumBuf = new Uint8Array(fmt.ncells);
+  if (resultUrl) { URL.revokeObjectURL(resultUrl); resultUrl = null; }
+  updateButtons();
+  setStatus("Waiting for a code ...");
+}
+function resetLive() {
+  if (live.audio) { try { aud.pause(); } catch (e) {} aud.removeAttribute("src"); aud.load(); }
+  Object.assign(live, { nextG: 0, audio: null, info: null, busy: false, unsupported: false, waitG: -1, waitSince: 0, skipped: 0, ended: false });
+}
+function updateButtons() {
+  $("bPartial").disabled = !(asm && asm.N);
+  $("bDl").disabled = !result;
+  $("bStop").disabled = !running;
+}
+
+async function startSource(k) {
+  stopSource();
+  kind = k === "file" ? "screen" : k;
+  try {
+    if (k === "screen") stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60 }, audio: false });
+    else if (k === "camera") stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } }, audio: false });
+  } catch (e) { setStatus("Could not start: " + e.message, "bad"); return; }
+  if (k === "file") { vid.srcObject = null; vid.loop = true; vid.muted = true; }
+  else { vid.srcObject = stream; vid.loop = false; }
+  loadQuad();
+  try { await vid.play(); } catch (e) {}
+  running = true; updateButtons(); loop();
+  setStatus(k === "camera" ? "Camera running. Place the corners on the code." : "Capturing. Place the corners on the code.");
+  if (stream) stream.getVideoTracks()[0].addEventListener("ended", stopSource);
+}
+function stopSource() {
+  running = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  vid.pause(); vid.srcObject = null;
+  updateButtons();
+}
+$("bScreen").onclick = () => startSource("screen");
+$("bCam").onclick = () => startSource("camera");
+$("bFile").onclick = () => $("vfile").click();
+$("vfile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  stopSource(); kind = "screen";
+  vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true;
+  loadQuad();
+  try { await vid.play(); } catch (err) {}
+  running = true; updateButtons(); loop();
+  setStatus("Playing video file. Place the corners on the code.");
+};
+$("bStop").onclick = stopSource;
+$("bReset").onclick = () => { resetReceiver(); };
+
+// ---- corner overlay
+function syncOverlay() { ov.width = Math.max(1, vid.clientWidth); ov.height = Math.max(1, vid.clientHeight); drawOverlay(); }
+new ResizeObserver(syncOverlay).observe(vid);
+vid.addEventListener("loadedmetadata", () => { samplerDirty = true; syncOverlay(); });
+function drawOverlay() {
+  if (!quadN) return;
+  const w = ov.width, h = ov.height;
+  ovCtx.clearRect(0, 0, w, h);
+  const p = quadN.map(q => [q[0] * w, q[1] * h]);
+  ovCtx.lineWidth = 2; ovCtx.strokeStyle = "#4cc2ff"; ovCtx.fillStyle = "rgba(76,194,255,.08)";
+  ovCtx.beginPath(); ovCtx.moveTo(p[0][0], p[0][1]); for (let i = 1; i < 4; i++) ovCtx.lineTo(p[i][0], p[i][1]); ovCtx.closePath(); ovCtx.fill(); ovCtx.stroke();
+  const map = quadMap(p);
+  ovCtx.strokeStyle = "rgba(76,194,255,.35)"; ovCtx.lineWidth = 1;
+  for (let k = 1; k < 4; k++) {            // faint quarter lines
+    const t = k / 4;
+    let a = map(t, 0), b = map(t, 1); ovCtx.beginPath(); ovCtx.moveTo(...a); ovCtx.lineTo(...b); ovCtx.stroke();
+    a = map(0, t); b = map(1, t); ovCtx.beginPath(); ovCtx.moveTo(...a); ovCtx.lineTo(...b); ovCtx.stroke();
+  }
+  p.forEach((q, i) => {
+    ovCtx.beginPath(); ovCtx.arc(q[0], q[1], 11, 0, 6.2832);
+    ovCtx.fillStyle = i === 0 ? "#ff6b6b" : "#4cc2ff"; ovCtx.fill();
+    ovCtx.fillStyle = "#04202e"; ovCtx.font = "bold 11px sans-serif"; ovCtx.textAlign = "center"; ovCtx.textBaseline = "middle";
+    ovCtx.fillText(["TL", "TR", "BR", "BL"][i], q[0], q[1]);
+  });
+}
+ov.addEventListener("pointerdown", e => {
+  const r = ov.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let best = -1, bd = 1e9;
+  quadN.forEach((q, i) => { const d = Math.hypot(q[0] * r.width - x, q[1] * r.height - y); if (d < bd) { bd = d; best = i; } });
+  if (bd < 45) { drag = best; ov.setPointerCapture(e.pointerId); }
+});
+ov.addEventListener("pointermove", e => {
+  if (drag < 0) return;
+  const r = ov.getBoundingClientRect();
+  quadN[drag] = [clamp((e.clientX - r.left) / r.width, 0, 1), clamp((e.clientY - r.top) / r.height, 0, 1)];
+  samplerDirty = true; drawOverlay();
+});
+ov.addEventListener("pointerup", () => { if (drag >= 0) { drag = -1; saveQuad(); } });
+$("bRot").onclick = () => { quadN = [quadN[3], quadN[0], quadN[1], quadN[2]]; samplerDirty = true; saveQuad(); drawOverlay(); };
+$("bMir").onclick = () => { quadN = [quadN[1], quadN[0], quadN[3], quadN[2]]; samplerDirty = true; saveQuad(); drawOverlay(); };
+$("bRst").onclick = () => { quadN = defaultQuad(kind); samplerDirty = true; saveQuad(); drawOverlay(); };
+
+// ---- frame loop
+function loop() {
+  if (!running) return;
+  const cb = () => {
+    if (!running) return;
+    try { processFrame(); } catch (e) { console.error(e); }
+    loop();
+  };
+  if ("requestVideoFrameCallback" in vid) vid.requestVideoFrameCallback(cb); else requestAnimationFrame(cb);
+}
+function processFrame() {
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  if (!vw || !quadN) return;
+  if (samplerDirty || !sampler || sampler.vw !== vw || sampler.vh !== vh) {
+    sampler = buildSampler(fmt, quadN.map(p => [p[0] * vw, p[1] * vh]), vw, vh, 1280);
+    roi.width = sampler.sw; roi.height = sampler.sh; samplerDirty = false;
+  }
+  rctx.drawImage(vid, sampler.bx, sampler.by, sampler.bw, sampler.bh, 0, 0, sampler.sw, sampler.sh);
+  const img = rctx.getImageData(0, 0, sampler.sw, sampler.sh).data;
+  sampleLum(sampler, img, lumBuf);
+  const res = decodeFrame(fmt, lumBuf);
+  lastThr = res.thr; cntScan++;
+  const now = performance.now();
+  if (now - lastPv > 120) { lastPv = now; drawPreview(res.contrast >= 40); }
+  if (res.frame) {
+    cntOk++;
+    if (!completed) {
+      const f = res.frame;
+      if (asm.add(f.n, f.N, f.L, f.payload)) { liveTick(); checkComplete(); updateButtons(); }
+    }
+  }
+}
+function drawPreview(show) {
+  const id = pvCtx.createImageData(fmt.cols, fmt.rows), d = id.data;
+  for (let i = 0; i < fmt.ncells; i++) {
+    const v = show ? (lumBuf[i] < lastThr ? 0 : 255) : lumBuf[i];
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+  }
+  pvCtx.putImageData(id, 0, 0);
+}
+
+// ---- live audio (Media Source Extensions)
+class LiveAudio {
+  constructor(el) { this.a = el; this.q = []; this.ready = false; this.ending = false; this.played = false; }
+  async init(mime, seq) {
+    this.ms = new MediaSource();
+    this.a.src = URL.createObjectURL(this.ms);
+    await new Promise(r => this.ms.addEventListener("sourceopen", r, { once: true }));
+    this.sb = this.ms.addSourceBuffer(mime);
+    if (seq) this.sb.mode = "sequence";
+    this.sb.addEventListener("updateend", () => this.pump());
+    this.ready = true; this.pump();
+  }
+  push(u8) { this.q.push(u8); this.pump(); }
+  end() { this.ending = true; this.pump(); }
+  pump() {
+    if (!this.ready || this.sb.updating) return;
+    if (this.q.length) {
+      try { this.sb.appendBuffer(this.q.shift()); }
+      catch (e) {
+        if (e.name === "QuotaExceededError") { try { this.sb.remove(0, Math.max(0, this.a.currentTime - 10)); } catch (e2) {} }
+        return;
+      }
+      if (!this.played) { this.played = true; this.a.play().catch(() => {}); }
+    } else if (this.ending && this.ms.readyState === "open") {
+      try { this.ms.endOfStream(); } catch (e) {}
+    }
+  }
+}
+async function liveTick() {
+  if (mode() !== "live" || !asm || !asm.N || live.busy || live.unsupported || live.ended) return;
+  live.busy = true;
+  try {
+    const { K, pay } = fmt;
+    while (live.nextG < asm.G) {
+      const g = live.nextG;
+      let r = asm.groupReady(g) ? asm.recoverGroup(g) : null;
+      if (!r) {
+        // MP3 can resync, so a hopeless group is skipped after a few seconds; WebM must wait for the next pass
+        const later = [1, 2, 3].some(k => g + k < asm.G && asm.groupReady(g + k));
+        if (live.info && live.info.seq && later) {
+          if (live.waitG !== g) { live.waitG = g; live.waitSince = performance.now(); }
+          if (performance.now() - live.waitSince > 3000) { live.skipped++; live.nextG++; continue; }
+        }
+        break;
+      }
+      const start = g * K * pay, end = Math.min(asm.L, start + K * pay);
+      const chunk = new Uint8Array(end - start);
+      r.data.forEach((p, i) => { const o = i * pay; if (o < chunk.length) chunk.set(p.subarray(0, Math.min(pay, chunk.length - o)), o); });
+      if (g === 0 && !live.audio) {
+        const info = sniff(chunk);
+        const mime = info.live && window.MediaSource ? info.live.find(m => MediaSource.isTypeSupported(m)) : null;
+        if (!mime) { live.unsupported = true; setStatus("This file type (" + info.ext + ") cannot be played live. It will be saved, and played after the transfer if it is audio."); break; }
+        live.info = info; live.audio = new LiveAudio(aud);
+        await live.audio.init(mime, info.seq);
+        setStatus("Live: playing " + info.ext.toUpperCase() + " while receiving", "ok");
+      }
+      if (!live.audio) break;
+      live.audio.push(chunk);
+      live.nextG++;
+    }
+    if (live.audio && live.nextG >= asm.G && !live.ended) { live.ended = true; live.audio.end(); }
+  } finally { live.busy = false; }
+}
+
+// ---- completion / saving
+function download(bytes, name, mime) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+}
+function checkComplete() {
+  if (completed || !asm.allReady()) return;
+  completed = true;
+  const r = asm.assemble();
+  const info = sniff(r.bytes);
+  result = { bytes: r.bytes, info, fixed: r.fixed };
+  setStatus("Complete: " + r.bytes.length + " bytes (" + info.ext + "), " + r.fixed + " frames rebuilt by error correction.", "ok");
+  if (info.audio && !live.audio) {
+    resultUrl = URL.createObjectURL(new Blob([r.bytes], { type: info.mime }));
+    aud.src = resultUrl;
+    if (mode() === "live") aud.play().catch(() => {});
+  }
+  if (mode() === "save") download(r.bytes, "received." + info.ext, info.mime);
+  updateButtons();
+}
+$("bDl").onclick = () => { if (result) download(result.bytes, "received." + result.info.ext, result.info.mime); };
+$("bPartial").onclick = () => {
+  if (!asm || !asm.N) return;
+  const r = asm.assemble(), info = sniff(r.bytes);
+  download(r.bytes, "received_partial." + info.ext, info.mime);
+  setStatus("Saved partial file: " + r.fixed + " frames rebuilt, " + r.lost + " data frames still missing (zero-filled).");
+};
+
+// ---- stats
+setInterval(() => {
+  rateScan = cntScan; rateOk = cntOk; cntScan = 0; cntOk = 0;
+  if (!asm) return;
+  const have = asm.frames.size, need = asm.N ? asm.G * fmt.K : 0, ready = asm.readyGroups();
+  const prog = asm.N ? ready / asm.G : 0;
+  $("barG").style.width = (prog * 100).toFixed(1) + "%";
+  let buf = "";
+  if (live.audio && aud.buffered.length) buf = "<br>audio buffered: " + Math.max(0, aud.buffered.end(aud.buffered.length - 1) - aud.currentTime).toFixed(1) + " s" + (live.skipped ? " &middot; skipped groups: " + live.skipped : "");
+  $("stats").innerHTML =
+    "scans/s: <b>" + rateScan + "</b> &nbsp; valid/s: <b class='" + (rateOk ? "ok" : "") + "'>" + rateOk + "</b><br>" +
+    "frames: <b>" + have + "</b> / " + (asm.N || "?") + (need ? " (need " + need + " in the right groups)" : "") + "<br>" +
+    "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf;
+  if (running && asm.N && !completed && mode() === "live") liveTick();
+}, 1000);
+
+$("selGrid").onchange = $("numK").onchange = $("numM").onchange = applyFormat;
+document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { store.set("mode", mode()); if (mode() === "live") liveTick(); });
+{ const m = store.get("mode", "live"); const el = document.querySelector('input[name="mode"][value="' + m + '"]'); if (el) el.checked = true; }
+
+// =========================================================== SEND
+const tc = $("tc"), tctx = tc.getContext("2d");
+let enc = null, sendRun = false, t0 = 0, lastIdx = -1;
+function updateTxButtons() {
+  $("bStart").disabled = !enc || sendRun;
+  $("bHalt").disabled = !sendRun;
+  $("bFull").disabled = !enc;
+}
+$("sfile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const data = new Uint8Array(await f.arrayBuffer());
+  const en = new Encoder(fmt, data);
+  if (en.N > 65535) { $("txInfo").textContent = "File too large for this format (" + en.N + " frames, max 65535)."; return; }
+  enc = en; haltSend(); updateTxInfo(0, 0); updateTxButtons();
+  drawTxFrame(0);
+};
+function updateTxInfo(n, pass) {
+  if (!enc) return;
+  const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
+  const kb = fps * fmt.pay * fmt.K / fmt.S / 1024;
+  $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; frames: <b>" + enc.N + "</b> (" + enc.G + " groups of " + fmt.S + ") &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
+    "<br>rate: " + fps + " frames/s &asymp; <b>" + kb.toFixed(1) + " kB/s</b> &middot; one pass takes " + (enc.N / fps).toFixed(1) + " s";
+}
+function drawTxFrame(n) {
+  const f = enc.frame(n), id = tctx.createImageData(fmt.cols, fmt.rows), d = id.data;
+  for (let i = 0; i < fmt.ncells; i++) {
+    const v = (f[i >> 3] & (0x80 >> (i & 7))) ? 0 : 255;
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+  }
+  tctx.putImageData(id, 0, 0);
+}
+function sendLoop(now) {
+  if (!sendRun) return;
+  const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
+  const idx = Math.floor((now - t0) * fps / 1000);
+  if (idx !== lastIdx) {
+    lastIdx = idx;
+    const n = idx % enc.N;
+    drawTxFrame(n); updateTxInfo(n, Math.floor(idx / enc.N));
+  }
+  requestAnimationFrame(sendLoop);
+}
+$("bStart").onclick = () => { if (!enc) return; sendRun = true; t0 = performance.now(); lastIdx = -1; updateTxButtons(); requestAnimationFrame(sendLoop); };
+function haltSend() { sendRun = false; updateTxButtons(); }
+$("bHalt").onclick = haltSend;
+$("bFull").onclick = () => { const w = $("tcWrap"); (w.requestFullscreen || w.webkitRequestFullscreen).call(w); };
+$("numFps").onchange = () => { store.set("fps", $("numFps").value); };
+{ const v = store.get("fps", null); if (v) $("numFps").value = v; }
+
+// ---- start
+applyFormat();
+loadQuad();
+</script>
+</body>
+</html>
