@@ -22,7 +22,7 @@ DllCall("user32.dll", "bool", "SetProcessDPIAware")
 
 Global Const $INI = @ScriptDir & "\brainvc.ini"
 Global Const $SEC = "brainvc"
-Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mVfps, $mDfps, $mPass, $mInfo
+
 ; ---- frame layout (16:9 grid, COLS*ROWS must be divisible by 8) -------
 Global $COLS = Int(_Cfg("Cols", 128)), $ROWS = Int(_Cfg("Rows", 72))
 If $COLS < 16 Or $ROWS < 9 Or Mod($COLS * $ROWS, 8) <> 0 Then
@@ -54,7 +54,11 @@ If $SAMPLES <> 1 And $SAMPLES <> 3 And $SAMPLES <> 5 Then $SAMPLES = 1
 Global $g_iW = Int(_Cfg("ScanWidth", 1024)), $g_iH = Round($g_iW * $ROWS / $COLS)   ; scanner frame size in px
 Global $g_hGUI, $g_aBorder[4]
 Global $g_oDict, $g_iN = 0, $g_iLen = 0
-Global $g_iThr = 0, $g_iFail = 0           ; sticky brightness threshold of the scanner
+Global $SCAN_MAX_FPS = Int(_Cfg("ScanMaxFps", 0))        ; scanner: limit scans per second (0 = as fast as possible)
+Global $g_iNibThr = Int(_Cfg("Thr", 8))                  ; scanner: brightness threshold in 16ths (8 = middle)
+If $g_iNibThr < 1 Or $g_iNibThr > 15 Then $g_iNibThr = 8
+Global $g_hScrDC, $g_hMemDC, $g_hDib, $g_pBits, $g_tSmall, $g_tFrame
+Global $g_aBin4[16], $g_aHex1[16], $g_sDark, $g_sBright
 
 ; ---- tuning: video export -------------------------------------------
 Global $EXPORT_CELL = Int(1920 / $COLS)                  ; video upscale per cell (1920 px wide video)
@@ -69,6 +73,9 @@ Global $g_aExp[512], $g_aLog[256]
 Global $g_aCoef[$FEC_M][$FEC_K]
 Global $g_aMT[$FEC_M * $FEC_K][256]        ; multiplication tables for the Cauchy coefficients
 Global $g_iGrpCache = -1, $g_aParity[$FEC_M][$PAY]
+
+; ---- settings menu controls -----------------------------------------
+Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mRate, $mThr, $mVfps, $mDfps, $mPass, $mInfo
 
 Global $g_sMode = ""
 If $CmdLine[0] > 0 Then $g_sMode = $CmdLine[1]
@@ -422,7 +429,6 @@ EndFunc   ;==>_Export
 ; scanner
 ; =====================================================================
 Func _Scanner()
-	_GDIPlus_Startup()
 	$g_hGUI = GUICreate("", 100, 100, 100, 100, $WS_POPUP, BitOR($WS_EX_LAYERED, $WS_EX_TOPMOST))
 	GUISetBkColor(0x010203)
 	For $i = 0 To 3
@@ -438,29 +444,24 @@ Func _Scanner()
 	HotKeySet("{NUMPADSUB}", "_SmallerFine")
 	HotKeySet("{END}", "_Quit")
 	HotKeySet("{HOME}", "_SavePartial")
+	_InitScan()
 
 	$g_oDict = ObjCreate("Scripting.Dictionary")
-	Local $aB[$NBYTES], $aPos, $i, $n, $iN, $sHex, $aRes
-	Local $iScan = 0, $iOk = 0, $hRate = TimerInit(), $sRate = "", $hChk = TimerInit()
+	Local $sFrame, $aPos, $n, $iN, $aRes
+	Local $iScan = 0, $iOk = 0, $hRate = TimerInit(), $sRate = "", $hChk = TimerInit(), $hTip = TimerInit(), $hLoop
+	Local $iMinMs = ($SCAN_MAX_FPS > 0) ? Int(1000 / $SCAN_MAX_FPS) : 0
 	While 1
+		$hLoop = TimerInit()
 		GUIGetMsg()
 		$aPos = WinGetPos($g_hGUI)
 		$iScan += 1
-		If _Grab($aB, $aPos[0] + $BORDER, $aPos[1] + $BORDER) Then
-			$n = $aB[0] * 256 + $aB[1]
-			$iN = $aB[2] * 256 + $aB[3]
-			If $iN > 0 And $n < $iN And Mod($iN, $FEC_S) = 0 Then
-				$iOk += 1
-				If Not $g_oDict.Exists($n) Then
-					$sHex = ""
-					For $i = 0 To $PAY - 1
-						$sHex &= Hex($aB[$HDR + $i], 2)
-					Next
-					$g_oDict.Item($n) = $sHex
-				EndIf
-				$g_iN = $iN
-				$g_iLen = $aB[4] * 16777216 + $aB[5] * 65536 + $aB[6] * 256 + $aB[7]
-			EndIf
+		If _GrabFast($sFrame, $aPos[0] + $BORDER, $aPos[1] + $BORDER) Then
+			$n = Dec(StringMid($sFrame, 1, 4))
+			$iN = Dec(StringMid($sFrame, 5, 4))
+			$iOk += 1
+			If Not $g_oDict.Exists($n) Then $g_oDict.Item($n) = StringMid($sFrame, $HDR * 2 + 1, $PAY * 2)
+			$g_iN = $iN
+			$g_iLen = Dec(StringMid($sFrame, 9, 8))
 		EndIf
 		If TimerDiff($hRate) >= 1000 Then
 			$sRate = $iScan & " scans/s, " & $iOk & " ok/s"
@@ -468,7 +469,10 @@ Func _Scanner()
 			$iOk = 0
 			$hRate = TimerInit()
 		EndIf
-		ToolTip("frames " & $g_oDict.Count & "/" & ($g_iN > 0 ? $g_iN & "  (need " & Int($g_iN / $FEC_S) * $FEC_K & " in the right groups)" : "?") & "   " & $g_iW & "x" & $g_iH & "px (cell " & Round($g_iW / $COLS, 1) & ")   " & $sRate & "   [Home = save partial]", $aPos[0], _Max($aPos[1] - 24, 0))
+		If TimerDiff($hTip) >= 250 Then
+			$hTip = TimerInit()
+			ToolTip("frames " & $g_oDict.Count & "/" & ($g_iN > 0 ? $g_iN & "  (need " & Int($g_iN / $FEC_S) * $FEC_K & " in the right groups)" : "?") & "   " & $g_iW & "x" & $g_iH & "px (cell " & Round($g_iW / $COLS, 1) & ")   " & $sRate & "   [Home = save partial]", $aPos[0], _Max($aPos[1] - 24, 0))
+		EndIf
 
 		If $g_iN > 0 And TimerDiff($hChk) >= 1000 Then
 			$hChk = TimerInit()
@@ -480,7 +484,13 @@ Func _Scanner()
 				Exit
 			EndIf
 		EndIf
-		Sleep(2)
+		If $iMinMs > 0 Then
+			While TimerDiff($hLoop) < $iMinMs
+				Sleep(1)
+			WEnd
+		Else
+			Sleep(1)
+		EndIf
 	WEnd
 EndFunc   ;==>_Scanner
 
@@ -658,113 +668,74 @@ Func _Quit()
 	Exit
 EndFunc   ;==>_Quit
 
-; grab region, sample cells (cell size may be fractional), rebuild bytes, verify CRC
-; fast path: after one good frame the brightness threshold is reused, so each cell is read and
-; packed into its byte in a single pass (only the green channel is used, frames are gray anyway)
-Func _Grab(ByRef $aB, $x, $y)
-	Local $w = $g_iW, $h = $g_iH
-	Local $hHBmp = _ScreenCapture_Capture("", $x, $y, $x + $w - 1, $y + $h - 1, False)
-	If Not $hHBmp Then Return False
-	Local $hImg = _GDIPlus_BitmapCreateFromHBITMAP($hHBmp)
-	Local $w2 = _GDIPlus_ImageGetWidth($hImg), $h2 = _GDIPlus_ImageGetHeight($hImg)
-	Local $bOk = False
+; one-time setup for the fast scanner: a COLS x ROWS 32-bit DIB that the screen region is shrunk into by GDI
+Func _InitScan()
+	Local $tBMI = DllStructCreate("struct;dword Size;long Width;long Height;ushort Planes;ushort BitCount;dword Compression;dword SizeImage;long XPels;long YPels;dword ClrUsed;dword ClrImportant;endstruct")
+	DllStructSetData($tBMI, "Size", DllStructGetSize($tBMI))
+	DllStructSetData($tBMI, "Width", $COLS)
+	DllStructSetData($tBMI, "Height", -$ROWS)      ; negative = top-down rows
+	DllStructSetData($tBMI, "Planes", 1)
+	DllStructSetData($tBMI, "BitCount", 32)
+	DllStructSetData($tBMI, "Compression", 0)
+	$g_hScrDC = _WinAPI_GetDC(0)
+	$g_hMemDC = _WinAPI_CreateCompatibleDC($g_hScrDC)
+	Local $aR = DllCall("gdi32.dll", "handle", "CreateDIBSection", "handle", $g_hScrDC, "struct*", $tBMI, "uint", 0, "ptr*", 0, "handle", 0, "dword", 0)
+	$g_hDib = $aR[0]
+	$g_pBits = $aR[4]
+	_WinAPI_SelectObject($g_hMemDC, $g_hDib)
+	; 1 sample = nearest pixel (fastest), 3 / 5 = HALFTONE (averages the whole cell, more robust)
+	DllCall("gdi32.dll", "int", "SetStretchBltMode", "handle", $g_hMemDC, "int", ($SAMPLES = 1) ? 3 : 4)
+	DllCall("gdi32.dll", "bool", "SetBrushOrgEx", "handle", $g_hMemDC, "int", 0, "int", 0, "ptr", 0)
+	$g_tSmall = DllStructCreate("byte[" & $COLS * $ROWS * 4 & "]", $g_pBits)
+	$g_tFrame = DllStructCreate("byte[" & $NBYTES & "]")
+	For $v = 0 To 15
+		$g_aBin4[$v] = BitAND(BitShift($v, 3), 1) & BitAND(BitShift($v, 2), 1) & BitAND(BitShift($v, 1), 1) & BitAND($v, 1) & ","
+		$g_aHex1[$v] = Hex($v, 1)
+	Next
+	Local $sSet = "0123456789ABCDEF"
+	$g_sDark = "[" & StringLeft($sSet, $g_iNibThr) & "]"
+	$g_sBright = "[" & StringMid($sSet, $g_iNibThr + 1) & "]"
+EndFunc   ;==>_InitScan
 
-	If $w2 >= $w - 2 And $h2 >= $h - 2 Then
-		Local $tData = _GDIPlus_BitmapLockBits($hImg, 0, 0, $w2, $h2, $GDIP_ILMREAD, $GDIP_PXF32RGB)
-		Local $iStride = DllStructGetData($tData, "Stride")
-		Local $pScan = DllStructGetData($tData, "Scan0")
-		Local $iRow = Abs($iStride)                 ; bytes per row
-		Local $pBase = $pScan
-		If $iStride < 0 Then $pBase = Ptr($pScan + ($h2 - 1) * $iStride)
-		Local $tPix = DllStructCreate("byte[" & $iRow * $h2 & "]", $pBase)   ; BGRA: byte 2 (1-based) = green
+; Read one frame from the screen. GDI shrinks the region to one pixel per cell (native), then the
+; whole frame is turned into bytes with string operations instead of a loop over every cell.
+; Returns the frame as hex string (header + payload) when the CRC is fine.
+Func _GrabFast(ByRef $sFrame, $x, $y)
+	Local $r = DllCall("gdi32.dll", "bool", "StretchBlt", "handle", $g_hMemDC, "int", 0, "int", 0, "int", $COLS, "int", $ROWS, _
+			"handle", $g_hScrDC, "int", $x, "int", $y, "int", $g_iW, "int", $g_iH, "dword", 0x00CC0020)
+	If @error Or Not $r[0] Then Return False
+	DllCall("gdi32.dll", "bool", "GdiFlush")
 
-		; byte index of every sample: aXs = column part (x*4 + 2), aYs = row part (row * rowBytes)
-		Local $cw = $w / $COLS, $ch = $h / $ROWS, $iNS = $SAMPLES - 1
-		Local $aFx[5] = [0.5, 0.25, 0.75, 0.25, 0.75]
-		Local $aFy[5] = [0.5, 0.25, 0.25, 0.75, 0.75]
-		Local $aXs[$COLS][5], $aYs[$ROWS][5]
-		Local $i, $k, $r, $cx, $bx, $q, $ry, $s, $cur
-		For $k = 0 To 4
-			For $cx = 0 To $COLS - 1
-				$aXs[$cx][$k] = Int(($cx + $aFx[$k]) * $cw) * 4 + 2
-			Next
-			For $r = 0 To $ROWS - 1
-				$ry = Int(($r + $aFy[$k]) * $ch)
-				If $iStride < 0 Then $ry = $h2 - 1 - $ry
-				$aYs[$r][$k] = $ry * $iRow
-			Next
-		Next
+	Local $s = Hex(DllStructGetData($g_tSmall, 1))                ; BBGGRRAA per pixel, 8 hex chars
+	$s = StringRegExpReplace($s, "..(.).{5}", "\1")               ; keep the high nibble of green -> 1 char per cell
+	$s = StringRegExpReplace($s, $g_sDark, "1")                   ; dark cell = bit 1
+	$s = StringRegExpReplace($s, $g_sBright, "0")
+	$s = StringRegExpReplace($s, "(....)", "\1,")                 ; 4 bits per token
+	For $v = 0 To 15
+		$s = StringReplace($s, $g_aBin4[$v], $g_aHex1[$v])        ; token -> one hex digit
+	Next
+	If StringLen($s) <> $NBYTES * 2 Then Return False
 
-		Local $iBpr = Int($COLS / 8), $iMin = 999999, $iMax = -1, $iThr = $g_iThr
-		If $iThr > 0 Then
-			; ---- fast path: one pass, threshold from the last good frame
-			For $r = 0 To $ROWS - 1
-				For $bx = 0 To $iBpr - 1
-					$cur = 0
-					For $q = 0 To 7
-						$cx = $bx * 8 + $q
-						$s = 0
-						For $k = 0 To $iNS
-							$s += DllStructGetData($tPix, 1, $aYs[$r][$k] + $aXs[$cx][$k])
-						Next
-						If $s < $iMin Then $iMin = $s
-						If $s > $iMax Then $iMax = $s
-						$cur *= 2
-						If $s < $iThr Then $cur += 1
-					Next
-					$aB[$r * $iBpr + $bx] = $cur
-				Next
-			Next
-		Else
-			; ---- slow path: measure min/max first, then pack
-			Local $aLum[$NCELLS]
-			For $r = 0 To $ROWS - 1
-				For $cx = 0 To $COLS - 1
-					$s = 0
-					For $k = 0 To $iNS
-						$s += DllStructGetData($tPix, 1, $aYs[$r][$k] + $aXs[$cx][$k])
-					Next
-					$aLum[$r * $COLS + $cx] = $s
-					If $s < $iMin Then $iMin = $s
-					If $s > $iMax Then $iMax = $s
-				Next
-			Next
-			$iThr = ($iMin + $iMax) / 2
-			For $i = 0 To $NBYTES - 1
-				$cur = 0
-				For $q = 0 To 7
-					$cur *= 2
-					If $aLum[$i * 8 + $q] < $iThr Then $cur += 1
-				Next
-				$aB[$i] = $cur
-			Next
-		EndIf
+	; cheap header check first, so torn / empty frames do not cost a CRC run
+	Local $n = Dec(StringMid($s, 1, 4)), $iN = Dec(StringMid($s, 5, 4))
+	If $iN = 0 Or $n >= $iN Or Mod($iN, $FEC_S) <> 0 Then Return False
 
-		If $iMax - $iMin > 100 * $SAMPLES Then   ; enough contrast to be a data frame
-			If _FrameCrc($aB) = $aB[8] * 256 + $aB[9] Then
-				$bOk = True
-				$g_iThr = Int(($iMin + $iMax) / 2)
-				$g_iFail = 0
-			Else
-				$g_iFail += 1
-				If $g_iFail >= 3 Then   ; threshold probably stale (video brightness changed): measure again
-					$g_iThr = 0
-					$g_iFail = 0
-				EndIf
-			EndIf
-		EndIf
-		_GDIPlus_BitmapUnlockBits($hImg, $tData)
-	EndIf
-
-	_GDIPlus_BitmapDispose($hImg)
-	_WinAPI_DeleteObject($hHBmp)
-	Return $bOk
-EndFunc   ;==>_Grab
+	DllStructSetData($g_tFrame, 1, Binary("0x" & $s))
+	Local $iCrc = 0xFFFF, $i
+	For $i = 1 To 8
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
+	Next
+	For $i = $HDR + 1 To $NBYTES
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
+	Next
+	If $iCrc <> DllStructGetData($g_tFrame, 1, 9) * 256 + DllStructGetData($g_tFrame, 1, 10) Then Return False
+	$sFrame = $s
+	Return True
+EndFunc   ;==>_GrabFast
 
 ; =====================================================================
 ; settings menu (writes brainvc.ini, then starts the chosen mode in a fresh process)
 ; =====================================================================
-
 
 Func _Cfg($sKey, $vDef)
 	Return IniRead($INI, $SEC, $sKey, $vDef)
@@ -784,7 +755,7 @@ Func _SetCombo($id, $sList, $sSel)
 EndFunc   ;==>_SetCombo
 
 Func _Menu()
-	GUICreate("BrAiNVC - settings", 450, 600)
+	GUICreate("BrAiNVC - settings", 450, 640)
 	GUISetFont(9, 400, 0, "Segoe UI")
 	Local $y
 
@@ -818,17 +789,23 @@ Func _Menu()
 	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
 	$y = 270
-	GUICtrlCreateGroup("Scanner", 10, $y, 430, 80)
+	GUICtrlCreateGroup("Scanner", 10, $y, 430, 132)
 	GUICtrlCreateLabel("Samples per cell", 25, $y + 26, 160, 18)
 	$mSamp = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
 	_SetCombo($mSamp, "1|3|5", $SAMPLES)
-	GUICtrlSetTip($mSamp, "1 = fastest, 3 or 5 = more robust for blurry / compressed video.")
+	GUICtrlSetTip($mSamp, "1 = nearest pixel per cell (fastest). 3 or 5 = average over the whole cell, more robust for blurry / compressed video.")
 	GUICtrlCreateLabel("Start width (px)", 25, $y + 52, 160, 18)
 	$mWidth = GUICtrlCreateInput($g_iW, 190, $y + 48, 60, 22, $ES_NUMBER)
 	GUICtrlSetTip($mWidth, "Width of the red frame at start (256-3000). Resize it later with PgUp/PgDn and numpad +/-.")
+	GUICtrlCreateLabel("Max scans per second", 25, $y + 78, 160, 18)
+	$mRate = GUICtrlCreateInput($SCAN_MAX_FPS, 190, $y + 74, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mRate, "0 = as fast as possible. A limit lowers CPU load.")
+	GUICtrlCreateLabel("Brightness threshold (1-15)", 25, $y + 104, 160, 18)
+	$mThr = GUICtrlCreateInput($g_iNibThr, 190, $y + 100, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mThr, "Cells darker than this (in 16ths of full brightness) count as black. 8 = middle. Change it if the picture is very dark or washed out.")
 	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
-	$y = 360
+	$y = 412
 	GUICtrlCreateGroup("Video export", 10, $y, 430, 108)
 	GUICtrlCreateLabel("Video frame rate (fps)", 25, $y + 26, 160, 18)
 	$mVfps = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
@@ -841,12 +818,12 @@ Func _Menu()
 	GUICtrlSetTip($mPass, "More repeats = lost frames get another chance (1-5).")
 	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
-	$mInfo = GUICtrlCreateLabel("", 15, 478, 420, 62)
+	$mInfo = GUICtrlCreateLabel("", 15, 528, 420, 62)
 
-	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 550, 100, 32)
-	Local $bScan = GUICtrlCreateButton("Scanner", 115, 550, 100, 32)
-	Local $bExp = GUICtrlCreateButton("Export video", 220, 550, 100, 32)
-	Local $bDef = GUICtrlCreateButton("Defaults", 325, 550, 115, 32)
+	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 598, 100, 32)
+	Local $bScan = GUICtrlCreateButton("Scanner", 115, 598, 100, 32)
+	Local $bExp = GUICtrlCreateButton("Export video", 220, 598, 100, 32)
+	Local $bDef = GUICtrlCreateButton("Defaults", 325, 598, 115, 32)
 	GUISetState(@SW_SHOW)
 
 	Local $iMsg, $hT = TimerInit()
@@ -900,6 +877,8 @@ Func _MenuSave()
 	IniWrite($INI, $SEC, "Shuffle", (GUICtrlRead($mShuf) = $GUI_CHECKED) ? 1 : 0)
 	IniWrite($INI, $SEC, "Samples", Int(GUICtrlRead($mSamp)))
 	IniWrite($INI, $SEC, "ScanWidth", _Num($mWidth, 256, 3000))
+	IniWrite($INI, $SEC, "ScanMaxFps", _Num($mRate, 0, 500))
+	IniWrite($INI, $SEC, "Thr", _Num($mThr, 1, 15))
 	Local $iV = Int(GUICtrlRead($mVfps))
 	IniWrite($INI, $SEC, "VideoFps", $iV)
 	IniWrite($INI, $SEC, "DataFps", _Num($mDfps, 1, Int($iV / 2)))
@@ -924,6 +903,8 @@ Func _MenuDefaults()
 	GUICtrlSetState($mShuf, $GUI_UNCHECKED)
 	_SetCombo($mSamp, "1|3|5", "1")
 	GUICtrlSetData($mWidth, 1024)
+	GUICtrlSetData($mRate, 0)
+	GUICtrlSetData($mThr, 8)
 	_SetCombo($mVfps, "30|60", "60")
 	GUICtrlSetData($mDfps, 10)
 	GUICtrlSetData($mPass, 2)
