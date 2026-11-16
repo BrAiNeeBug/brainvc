@@ -1,4 +1,4 @@
-full mobile version:
+full web version:
 https://braineebug.github.io/brainvc/brainvc.html
 
 
