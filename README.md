@@ -1,6 +1,9 @@
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
 
+latest test decoding realtime:
+https://www.youtube.com/watch?v=2UXPfT9GhDY
+
 
 latest encoding:
 https://www.youtube.com/watch?v=B48R-Uo9mwc
