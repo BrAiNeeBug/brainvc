@@ -2,12 +2,8 @@ full web version:
 https://braineebug.github.io/brainvc/brainvc.html
 
 
-
 latest encoding:
-[https://www.youtube.com/watch?v=vNelfvGHPeI](https://www.youtube.com/watch?v=68c8x0ZAi6E)
-
-latest decoding:
-[https://www.youtube.com/watch?v=-0ewq3weVHo](https://www.youtube.com/watch?v=3p1hNlboOBw)
+https://www.youtube.com/watch?v=B48R-Uo9mwc
 
 
 very first test decoding:
