@@ -65,6 +65,8 @@ Global $EXPORT_CELL = Int(1920 / $COLS)                  ; video upscale per cel
 Global $EXPORT_VFPS = Int(_Cfg("VideoFps", 60))          ; video frame rate
 Global $EXPORT_DATA_FPS = Number(_Cfg("DataFps", 10))    ; data frames per second
 Global $EXPORT_PASSES = Int(_Cfg("Passes", 2))           ; how many times the whole file is repeated in the video
+Global $BEACON_SEC = Int(_Cfg("BeaconSec", 5))           ; logo + 3-2-1 before the data (live encoder and export), 0 = off
+If $BEACON_SEC < 0 Or $BEACON_SEC > 30 Then $BEACON_SEC = 5
 If $EXPORT_DATA_FPS > $EXPORT_VFPS / 2 Then $EXPORT_DATA_FPS = $EXPORT_VFPS / 2
 
 ; ---- tables ---------------------------------------------------------
@@ -75,7 +77,7 @@ Global $g_aMT[$FEC_M * $FEC_K][256]        ; multiplication tables for the Cauch
 Global $g_iGrpCache = -1, $g_aParity[$FEC_M][$PAY]
 
 ; ---- settings menu controls -----------------------------------------
-Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mRate, $mThr, $mVfps, $mDfps, $mPass, $mInfo
+Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mRate, $mThr, $mVfps, $mDfps, $mPass, $mBeacon, $mInfo
 
 Global $g_sMode = ""
 If $CmdLine[0] > 0 Then $g_sMode = $CmdLine[1]
@@ -340,6 +342,20 @@ Func _Encoder()
 	Next
 
 	Local $aF[$NBYTES], $f, $hT, $iPass = 0, $iHold
+	If $BEACON_SEC > 0 Then
+		Local $aS[4] = ["BrAiNVC", "3", "2", "1"], $aT[4] = [$BEACON_SEC * 1000, 1000, 1000, 1000], $iB
+		For $iB = 0 To 3
+			_RenderBeacon($aS[$iB], $aF)
+			_DrawFrame($hCtx, $aF, $CELL, $hBlack)
+			_WinAPI_BitBlt($hDC, 0, 0, $iW, $iH, $hMemDC, 0, 0, 0x00CC0020)   ; SRCCOPY
+			WinSetTitle($hGUI, "", "BrAiNVC Encoder  beacon " & $aS[$iB])
+			$hT = TimerInit()
+			While TimerDiff($hT) < $aT[$iB]
+				If GUIGetMsg() = $GUI_EVENT_CLOSE Then Exit
+				Sleep(10)
+			WEnd
+		Next
+	EndIf
 	While 1
 		$hT = TimerInit()
 		If $iPos = 0 Then
@@ -362,6 +378,85 @@ Func _Encoder()
 		$iPos = Mod($iPos + 1, $iN)
 	WEnd
 EndFunc   ;==>_Encoder
+
+; =====================================================================
+; beacon: logo and 3-2-1 countdown in a 5x7 pixel font inside a 1-cell border ring
+; (same layout as the web version, so either side recognises the other's beacon)
+; =====================================================================
+Func _Glyph($c)
+	Switch $c
+		Case "B"
+			Return "11110" & "10001" & "10001" & "11110" & "10001" & "10001" & "11110"
+		Case "r"
+			Return "00000" & "00000" & "10110" & "11001" & "10000" & "10000" & "10000"
+		Case "A"
+			Return "01110" & "10001" & "10001" & "11111" & "10001" & "10001" & "10001"
+		Case "i"
+			Return "00100" & "00000" & "01100" & "00100" & "00100" & "00100" & "01110"
+		Case "N"
+			Return "10001" & "11001" & "10101" & "10011" & "10001" & "10001" & "10001"
+		Case "V"
+			Return "10001" & "10001" & "10001" & "10001" & "10001" & "01010" & "00100"
+		Case "C"
+			Return "01110" & "10001" & "10000" & "10000" & "10000" & "10001" & "01110"
+		Case "3"
+			Return "01110" & "10001" & "00001" & "00110" & "00001" & "10001" & "01110"
+		Case "2"
+			Return "01110" & "10001" & "00001" & "00010" & "00100" & "01000" & "11111"
+		Case "1"
+			Return "00100" & "01100" & "00100" & "00100" & "00100" & "00100" & "01110"
+	EndSwitch
+	Return "0000000000000000000000000000000000"
+EndFunc   ;==>_Glyph
+
+; fill $aF (frame bytes) with the beacon picture for $sText
+Func _RenderBeacon($sText, ByRef $aF)
+	Local $i, $r, $c, $k, $gx, $gy, $dx, $dy, $sG
+	For $i = 0 To $NBYTES - 1
+		$aF[$i] = 0
+	Next
+	For $r = 0 To $ROWS - 1
+		For $c = 0 To $COLS - 1
+			If $r = 0 Or $r = $ROWS - 1 Or $c = 0 Or $c = $COLS - 1 Then
+				$i = $r * $COLS + $c
+				$aF[Int($i / 8)] = BitOR($aF[Int($i / 8)], BitShift(0x80, Mod($i, 8)))
+			EndIf
+		Next
+	Next
+	Local $n = StringLen($sText), $iW = $n * 6 - 1
+	Local $s = Int(_Min(($COLS - 4) / $iW, ($ROWS - 4) / 7))
+	If $s < 1 Then $s = 1
+	Local $x0 = Int(($COLS - $iW * $s) / 2), $y0 = Int(($ROWS - 7 * $s) / 2)
+	For $k = 0 To $n - 1
+		$sG = _Glyph(StringMid($sText, $k + 1, 1))
+		For $gy = 0 To 6
+			For $gx = 0 To 4
+				If StringMid($sG, $gy * 5 + $gx + 1, 1) = "1" Then
+					For $dy = 0 To $s - 1
+						For $dx = 0 To $s - 1
+							$i = ($y0 + $gy * $s + $dy) * $COLS + $x0 + ($k * 6 + $gx) * $s + $dx
+							$aF[Int($i / 8)] = BitOR($aF[Int($i / 8)], BitShift(0x80, Mod($i, 8)))
+						Next
+					Next
+				EndIf
+			Next
+		Next
+	Next
+EndFunc   ;==>_RenderBeacon
+
+; export: write the beacon picture for $fSec seconds into frames.raw, returns the number of video frames
+Func _WriteBeacon($hRaw, $sText, $fSec)
+	Local $aF[$NBYTES], $tF = DllStructCreate("byte[" & $NBYTES & "]"), $i
+	_RenderBeacon($sText, $aF)
+	For $i = 0 To $NBYTES - 1
+		DllStructSetData($tF, 1, $aF[$i], $i + 1)
+	Next
+	Local $bin = DllStructGetData($tF, 1), $iCount = Round($fSec * $EXPORT_VFPS)
+	For $i = 1 To $iCount
+		FileWrite($hRaw, $bin)
+	Next
+	Return $iCount
+EndFunc   ;==>_WriteBeacon
 
 Func _Shuffle(ByRef $a)
 	Local $j, $t
@@ -391,6 +486,12 @@ Func _Export()
 	Local $hRaw = FileOpen($sDir & "\frames.raw", 2 + 16)
 	Local $aF[$NBYTES], $tF = DllStructCreate("byte[" & $NBYTES & "]"), $bin
 	Local $i, $k, $n, $iPass, $iRep, $iVid = 0, $iDone = 0, $iOut = $iN * $EXPORT_PASSES
+	If $BEACON_SEC > 0 Then   ; logo, then 3-2-1, before the first data frame
+		$iVid += _WriteBeacon($hRaw, "BrAiNVC", $BEACON_SEC)
+		For $k = 3 To 1 Step -1
+			$iVid += _WriteBeacon($hRaw, String($k), 1)
+		Next
+	EndIf
 	For $iPass = 1 To $EXPORT_PASSES
 		For $n = 0 To $iN - 1
 			_MakeFrame($bData, $n, $iN, $iLen, $aF)
@@ -755,7 +856,7 @@ Func _SetCombo($id, $sList, $sSel)
 EndFunc   ;==>_SetCombo
 
 Func _Menu()
-	GUICreate("BrAiNVC - settings", 450, 640)
+	GUICreate("BrAiNVC - settings", 450, 666)
 	GUISetFont(9, 400, 0, "Segoe UI")
 	Local $y
 
@@ -806,7 +907,7 @@ Func _Menu()
 	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
 	$y = 412
-	GUICtrlCreateGroup("Video export", 10, $y, 430, 108)
+	GUICtrlCreateGroup("Video export", 10, $y, 430, 134)
 	GUICtrlCreateLabel("Video frame rate (fps)", 25, $y + 26, 160, 18)
 	$mVfps = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
 	_SetCombo($mVfps, "30|60", $EXPORT_VFPS)
@@ -816,14 +917,17 @@ Func _Menu()
 	GUICtrlCreateLabel("Repeats of the whole file", 25, $y + 78, 160, 18)
 	$mPass = GUICtrlCreateInput($EXPORT_PASSES, 190, $y + 74, 60, 22, $ES_NUMBER)
 	GUICtrlSetTip($mPass, "More repeats = lost frames get another chance (1-5).")
+	GUICtrlCreateLabel("Beacon before data (s)", 25, $y + 104, 160, 18)
+	$mBeacon = GUICtrlCreateInput($BEACON_SEC, 190, $y + 100, 60, 22, $ES_NUMBER)
+	GUICtrlSetTip($mBeacon, "Logo, then a 3-2-1 countdown before the data starts (0 = off). Gives you time to start the video and align the scanner. Used by the live encoder and the export.")
 	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
-	$mInfo = GUICtrlCreateLabel("", 15, 528, 420, 62)
+	$mInfo = GUICtrlCreateLabel("", 15, 554, 420, 62)
 
-	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 598, 100, 32)
-	Local $bScan = GUICtrlCreateButton("Scanner", 115, 598, 100, 32)
-	Local $bExp = GUICtrlCreateButton("Export video", 220, 598, 100, 32)
-	Local $bDef = GUICtrlCreateButton("Defaults", 325, 598, 115, 32)
+	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 624, 100, 32)
+	Local $bScan = GUICtrlCreateButton("Scanner", 115, 624, 100, 32)
+	Local $bExp = GUICtrlCreateButton("Export video", 220, 624, 100, 32)
+	Local $bDef = GUICtrlCreateButton("Defaults", 325, 624, 115, 32)
 	GUISetState(@SW_SHOW)
 
 	Local $iMsg, $hT = TimerInit()
@@ -883,6 +987,7 @@ Func _MenuSave()
 	IniWrite($INI, $SEC, "VideoFps", $iV)
 	IniWrite($INI, $SEC, "DataFps", _Num($mDfps, 1, Int($iV / 2)))
 	IniWrite($INI, $SEC, "Passes", _Num($mPass, 1, 5))
+	IniWrite($INI, $SEC, "BeaconSec", _Num($mBeacon, 0, 30))
 EndFunc   ;==>_MenuSave
 
 ; save, start the mode as a new process (so every setting, also grid / FEC, takes effect), close the menu
@@ -908,4 +1013,5 @@ Func _MenuDefaults()
 	_SetCombo($mVfps, "30|60", "60")
 	GUICtrlSetData($mDfps, 10)
 	GUICtrlSetData($mPass, 2)
+	GUICtrlSetData($mBeacon, 5)
 EndFunc   ;==>_MenuDefaults

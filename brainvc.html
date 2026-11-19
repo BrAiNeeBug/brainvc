@@ -35,7 +35,7 @@ label{display:inline-flex;align-items:center;gap:6px}
 #tcWrap{background:#222;padding:14px;border-radius:8px;display:flex;justify-content:center}
 #tcWrap:fullscreen{align-items:center;padding:0;background:#000}
 #tc{image-rendering:pixelated;background:#fff;border:14px solid #fff;max-width:100%;aspect-ratio:16/9;width:min(100%,calc((100vh - 260px) * 16 / 9))}
-#tcWrap:fullscreen #tc{width:min(100vw,calc(100vh * 16 / 9));border-width:12px}
+#tcWrap:fullscreen #tc{width:100vw;height:100vh;max-width:none;aspect-ratio:auto;border:0}
 audio{width:100%;max-width:520px}
 </style>
 </head>
@@ -77,11 +77,12 @@ audio{width:100%;max-width:520px}
     <button id="bRot" title="Rotate which corner is the top-left of the code">&#8635; Rotate corners</button>
     <button id="bMir" title="Mirror horizontally (e.g. selfie camera)">&#8596; Mirror</button>
     <button id="bRst">Reset corners</button>
-    <span class="dim">Drag the four corners onto the corners of the code. TL must match the code's top-left.</span>
+    <label><input type="checkbox" id="chkRem"> Remember my corners</label>
+    <span class="dim">By default the whole video frame is read. Drag the corners only if the code sits in a smaller area (TL = top-left of the code).</span>
   </div>
 
   <div class="row" style="align-items:flex-start">
-    <div><div class="dim">What the scanner sees</div><canvas id="pv" class="pv" width="128" height="72"></canvas></div>
+    <div><div class="dim">What the scanner sees</div><canvas id="pv" class="pv" width="128" height="72"></canvas><div id="beacon" class="dim" style="margin-top:4px;min-height:20px"></div></div>
     <div class="stats" id="stats" style="min-width:260px"></div>
   </div>
   <div class="bar"><i id="barG"></i></div>
@@ -106,14 +107,15 @@ audio{width:100%;max-width:520px}
   <div class="row">
     <input id="sfile" type="file">
     <label>Data frames/s <input id="numFps" type="number" min="1" max="30" value="10"></label>
+    <label>Beacon <input id="numBeacon" type="number" min="0" max="30" value="5"> s + 3-2-1</label>
     <button id="bStart" class="primary" disabled>Start</button>
     <button id="bHalt" disabled>Stop</button>
     <button id="bFull" disabled>Fullscreen</button>
   </div>
   <div id="tcWrap"><canvas id="tc" width="128" height="72"></canvas></div>
-  <div class="card stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start.</div>
+  <div class="card stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start. A beacon (logo, then 3-2-1) runs first, so you have time to start the receiver.</div>
   <div class="dim">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
-  Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz).</div>
+  Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
 </section>
 
 </main>
@@ -421,6 +423,70 @@ function sniff(b) {
   if (text) return { ext: "txt", mime: "text/plain", audio: false, live: null };
   return bin;
 }
+
+// ------------------------------------------------------------------ beacon
+// Logo + countdown drawn with a 5x7 pixel font inside a 1-cell border ring.
+// Same layout as brainvc.au3, so a beacon from either side can be recognised by either side.
+const GLYPHS = {
+  B: "11110" + "10001" + "10001" + "11110" + "10001" + "10001" + "11110",
+  r: "00000" + "00000" + "10110" + "11001" + "10000" + "10000" + "10000",
+  A: "01110" + "10001" + "10001" + "11111" + "10001" + "10001" + "10001",
+  i: "00100" + "00000" + "01100" + "00100" + "00100" + "00100" + "01110",
+  N: "10001" + "11001" + "10101" + "10011" + "10001" + "10001" + "10001",
+  V: "10001" + "10001" + "10001" + "10001" + "10001" + "01010" + "00100",
+  C: "01110" + "10001" + "10000" + "10000" + "10000" + "10001" + "01110",
+  "3": "01110" + "10001" + "00001" + "00110" + "00001" + "10001" + "01110",
+  "2": "01110" + "10001" + "00001" + "00010" + "00100" + "01000" + "11111",
+  "1": "00100" + "01100" + "00100" + "00100" + "00100" + "00100" + "01110"
+};
+function beaconBits(fmt, text) {
+  const { cols, rows, ncells } = fmt, bits = new Uint8Array(ncells);
+  for (let c = 0; c < cols; c++) { bits[c] = 1; bits[(rows - 1) * cols + c] = 1; }
+  for (let r = 0; r < rows; r++) { bits[r * cols] = 1; bits[r * cols + cols - 1] = 1; }
+  const n = text.length, w = n * 6 - 1;
+  const s = Math.max(1, Math.floor(Math.min((cols - 4) / w, (rows - 4) / 7)));
+  const x0 = Math.floor((cols - w * s) / 2), y0 = Math.floor((rows - 7 * s) / 2);
+  for (let k = 0; k < n; k++) {
+    const g = GLYPHS[text[k]];
+    for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 5; gx++) {
+      if (g[gy * 5 + gx] !== "1") continue;
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) bits[(y0 + gy * s + dy) * cols + x0 + (k * 6 + gx) * s + dx] = 1;
+    }
+  }
+  return bits;
+}
+function bitsToFrame(fmt, bits) {
+  const b = new Uint8Array(fmt.nbytes);
+  for (let i = 0; i < fmt.ncells; i++) if (bits[i]) b[i >> 3] |= 0x80 >> (i & 7);
+  return b;
+}
+function beaconTemplates(fmt) {
+  return { logo: beaconBits(fmt, "BrAiNVC"), d3: beaconBits(fmt, "3"), d2: beaconBits(fmt, "2"), d1: beaconBits(fmt, "1") };
+}
+// how well does the thresholded picture match a beacon image? Also tries mirrored / upside-down.
+// flip: 0 = as is, 1 = mirrored left-right, 2 = flipped top-bottom, 3 = rotated 180 degrees
+function beaconMatch(fmt, lum, thr, tpl) {
+  const { cols, rows, ncells } = fmt;
+  const d = new Uint8Array(ncells);
+  for (let i = 0; i < ncells; i++) d[i] = lum[i] < thr ? 1 : 0;
+  let best = { name: "", ratio: 0, flip: 0 };
+  for (const name of Object.keys(tpl)) {
+    const t = tpl[name];
+    for (let f = 0; f < 4; f++) {
+      let m = 0;
+      for (let r = 0; r < rows; r++) {
+        const rr = (f & 2) ? rows - 1 - r : r;
+        for (let c = 0; c < cols; c++) {
+          const cc = (f & 1) ? cols - 1 - c : c;
+          if (d[rr * cols + cc] === t[r * cols + c]) m++;
+        }
+      }
+      const ratio = m / ncells;
+      if (ratio > best.ratio) best = { name, ratio, flip: f };
+    }
+  }
+  return best;
+}
 // =====================================================================
 // ===== CORE END =====
 // =====================================================================
@@ -442,7 +508,7 @@ function applyFormat() {
   store.set("fmt", { grid: $("selGrid").value, K, M });
   $("tc").width = c; $("tc").height = r;
   pv.width = c; pv.height = r;
-  samplerDirty = true;
+  samplerDirty = true; tpls = beaconTemplates(fmt); beaconCache = {};
   resetReceiver();
   enc = null; haltSend(); updateTxButtons();
 }
@@ -463,16 +529,22 @@ $("tabTx").onclick = () => showTab(false);
 // =========================================================== RECEIVE
 const vid = $("vid"), ov = $("ov"), ovCtx = ov.getContext("2d"), aud = $("aud");
 const roi = document.createElement("canvas"), rctx = roi.getContext("2d", { willReadFrequently: true });
+let srcType = "screen";                  // screen | camera | file
+// file playback control: adaptive speed + skipping what we already have
+const fp = { base: 0.5, lastPresented: 0, missed: 0, calm: 0, lastCtl: 0, mode: "read", curN: -1, lastOk: 0, passes: 0, lastMedia: 0 };
 let stream = null, running = false, kind = "screen", quadN = null, sampler = null, samplerDirty = true;
 let lumBuf = null, asm = null, completed = false, result = null, resultUrl = null;
 let cntScan = 0, cntOk = 0, rateScan = 0, rateOk = 0, lastPv = 0, lastThr = 128;
-let drag = -1;
+let drag = -1, tpls = null, lastBeacon = 0;
 const live = { nextG: 0, audio: null, info: null, busy: false, unsupported: false, waitG: -1, waitSince: 0, skipped: 0, ended: false };
 
 const defaultQuad = k => k === "camera" ? [[0.15, 0.2], [0.85, 0.2], [0.85, 0.8], [0.15, 0.8]]
-                                         : [[0.02, 0.02], [0.98, 0.02], [0.98, 0.98], [0.02, 0.98]];
-function loadQuad() { quadN = store.get("quad_" + kind, null) || defaultQuad(kind); samplerDirty = true; drawOverlay(); }
-function saveQuad() { store.set("quad_" + kind, quadN); }
+                                         : [[0, 0], [1, 0], [1, 1], [0, 1]];          // screen / file: the code fills the whole frame
+function loadQuad() {
+  const saved = $("chkRem").checked ? store.get("quad_" + kind, null) : null;
+  quadN = saved || defaultQuad(kind); samplerDirty = true; drawOverlay();
+}
+function saveQuad() { if ($("chkRem").checked) store.set("quad_" + kind, quadN); }
 function mode() { return document.querySelector('input[name="mode"]:checked').value; }
 function setStatus(t, cls) { $("status").textContent = t; $("status").className = cls || "dim"; }
 
@@ -497,7 +569,7 @@ function updateButtons() {
 
 async function startSource(k) {
   stopSource();
-  kind = k === "file" ? "screen" : k;
+  srcType = k; kind = k;
   try {
     if (k === "screen") stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60 }, audio: false });
     else if (k === "camera") stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } }, audio: false });
@@ -521,12 +593,16 @@ $("bCam").onclick = () => startSource("camera");
 $("bFile").onclick = () => $("vfile").click();
 $("vfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  stopSource(); kind = "screen";
+  stopSource(); srcType = "file"; kind = "screen";
+  Object.assign(fp, { base: 0.5, lastPresented: 0, missed: 0, calm: 0, lastCtl: 0, mode: "read", curN: -1, lastOk: 0, passes: 0, lastMedia: 0 });
   vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true;
+  vid.playbackRate = "requestVideoFrameCallback" in vid ? fp.base : 0.25;
   loadQuad();
+  running = true; updateButtons();
   try { await vid.play(); } catch (err) {}
-  running = true; updateButtons(); loop();
-  setStatus("Playing video file. Place the corners on the code.");
+  vid.currentTime = 0;
+  loop();                                  // callback is registered right at the start, so the beginning is not lost
+  setStatus("Playing video file (speed adapts automatically, known parts are skipped). Place the corners on the code.");
 };
 $("bStop").onclick = stopSource;
 $("bReset").onclick = () => { resetReceiver(); };
@@ -571,14 +647,16 @@ ov.addEventListener("pointermove", e => {
 ov.addEventListener("pointerup", () => { if (drag >= 0) { drag = -1; saveQuad(); } });
 $("bRot").onclick = () => { quadN = [quadN[3], quadN[0], quadN[1], quadN[2]]; samplerDirty = true; saveQuad(); drawOverlay(); };
 $("bMir").onclick = () => { quadN = [quadN[1], quadN[0], quadN[3], quadN[2]]; samplerDirty = true; saveQuad(); drawOverlay(); };
+$("chkRem").checked = store.get("remember", false);
+$("chkRem").onchange = () => { store.set("remember", $("chkRem").checked); saveQuad(); };
 $("bRst").onclick = () => { quadN = defaultQuad(kind); samplerDirty = true; saveQuad(); drawOverlay(); };
 
 // ---- frame loop
 function loop() {
   if (!running) return;
-  const cb = () => {
+  const cb = (now, meta) => {
     if (!running) return;
-    try { processFrame(); } catch (e) { console.error(e); }
+    try { if (srcType === "file" && meta) controlFile(meta); processFrame(); } catch (e) { console.error(e); }
     loop();
   };
   if ("requestVideoFrameCallback" in vid) vid.requestVideoFrameCallback(cb); else requestAnimationFrame(cb);
@@ -597,13 +675,52 @@ function processFrame() {
   lastThr = res.thr; cntScan++;
   const now = performance.now();
   if (now - lastPv > 120) { lastPv = now; drawPreview(res.contrast >= 40); }
+  if (!res.frame && res.contrast >= 40 && now - lastBeacon > 200) { lastBeacon = now; showBeacon(beaconMatch(fmt, lumBuf, res.thr, tpls)); }
+  else if (res.frame && now - lastBeacon > 1500) { lastBeacon = now; $("beacon").textContent = ""; }
   if (res.frame) {
     cntOk++;
+    if (srcType === "file") { fp.curN = res.frame.n; fp.lastOk = performance.now(); }
     if (!completed) {
       const f = res.frame;
       if (asm.add(f.n, f.N, f.L, f.payload)) { liveTick(); checkComplete(); updateButtons(); }
     }
   }
+}
+// File playback is not live, so nothing has to be lost:
+//  - if frames get dropped because decoding is slower than playback, the speed is reduced step by step
+//  - while the playhead is inside a part whose groups we already have, it runs fast (skip mode)
+//  - the file loops, so missing parts are simply read again in the next pass
+function controlFile(meta) {
+  if (fp.lastPresented && fp.mode === "read" && meta.presentedFrames - fp.lastPresented > 1) fp.missed += meta.presentedFrames - fp.lastPresented - 1;
+  fp.lastPresented = meta.presentedFrames;
+  if (meta.mediaTime < fp.lastMedia - 0.5) fp.passes++;
+  fp.lastMedia = meta.mediaTime;
+  const t = performance.now();
+  if (t - fp.lastCtl < 300) return;
+  fp.lastCtl = t;
+  if (fp.missed > 0) { fp.base = Math.max(0.1, fp.base * 0.7); fp.missed = 0; fp.calm = 0; }
+  else if (++fp.calm >= 4 && fp.base < 1) { fp.base = Math.min(1, fp.base * 1.15); fp.calm = 0; }
+  let target = fp.base; fp.mode = "read";
+  if (asm && asm.N && fp.curN >= 0 && t - fp.lastOk < 700 && !asm.allReady()) {
+    const g = Math.floor(fp.curN / fmt.S);
+    let ahead = true;
+    for (let k = 0; k <= 4; k++) if (g + k < asm.G && !asm.groupReady(g + k)) { ahead = false; break; }
+    if (ahead) { target = 4; fp.mode = "skip"; }
+  }
+  if (Math.abs(vid.playbackRate - target) > 0.01) vid.playbackRate = target;
+}
+const BEACON_NAMES = { logo: "Beacon", d3: "Countdown 3", d2: "Countdown 2", d1: "Countdown 1" };
+// alignment feedback while the beacon is on screen: how much of the picture matches the expected image
+function showBeacon(m) {
+  const el = $("beacon");
+  if (!m || m.ratio < 0.7) { el.textContent = ""; return; }
+  const pct = Math.round(m.ratio * 100);
+  let t = BEACON_NAMES[m.name] + ": " + pct + "% match";
+  if (m.flip === 1) t += " - mirrored, press Mirror";
+  else if (m.flip === 2) t += " - upside down and mirrored, press Mirror, then Rotate twice";
+  else if (m.flip === 3) t += " - upside down, press Rotate twice";
+  else t += pct >= 90 ? " - aligned" : " - adjust the corners";
+  el.textContent = t; el.className = (pct >= 90 && !m.flip) ? "ok" : "dim";
 }
 function drawPreview(show) {
   const id = pvCtx.createImageData(fmt.cols, fmt.rows), d = id.data;
@@ -688,6 +805,7 @@ function download(bytes, name, mime) {
 function checkComplete() {
   if (completed || !asm.allReady()) return;
   completed = true;
+  if (srcType === "file") vid.pause();
   const r = asm.assemble();
   const info = sniff(r.bytes);
   result = { bytes: r.bytes, info, fixed: r.fixed };
@@ -720,7 +838,8 @@ setInterval(() => {
   $("stats").innerHTML =
     "scans/s: <b>" + rateScan + "</b> &nbsp; valid/s: <b class='" + (rateOk ? "ok" : "") + "'>" + rateOk + "</b><br>" +
     "frames: <b>" + have + "</b> / " + (asm.N || "?") + (need ? " (need " + need + " in the right groups)" : "") + "<br>" +
-    "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf;
+    "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf +
+    (running && srcType === "file" ? "<br>file: speed <b>" + vid.playbackRate.toFixed(2) + "x</b> (" + (fp.mode === "skip" ? "skipping known parts" : "reading") + "), pass " + (fp.passes + 1) : "");
   if (running && asm.N && !completed && mode() === "live") liveTick();
 }, 1000);
 
@@ -730,7 +849,7 @@ document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => 
 
 // =========================================================== SEND
 const tc = $("tc"), tctx = tc.getContext("2d");
-let enc = null, sendRun = false, t0 = 0, lastIdx = -1;
+let enc = null, sendRun = false, t0 = 0, lastIdx = -1, beaconMs = 0, introMs = 0, lastIntro = "", beaconCache = {};
 function updateTxButtons() {
   $("bStart").disabled = !enc || sendRun;
   $("bHalt").disabled = !sendRun;
@@ -751,8 +870,13 @@ function updateTxInfo(n, pass) {
   $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; frames: <b>" + enc.N + "</b> (" + enc.G + " groups of " + fmt.S + ") &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
     "<br>rate: " + fps + " frames/s &asymp; <b>" + kb.toFixed(1) + " kB/s</b> &middot; one pass takes " + (enc.N / fps).toFixed(1) + " s";
 }
-function drawTxFrame(n) {
-  const f = enc.frame(n), id = tctx.createImageData(fmt.cols, fmt.rows), d = id.data;
+function beaconFrame(text) {
+  if (!beaconCache[text]) beaconCache[text] = bitsToFrame(fmt, beaconBits(fmt, text));
+  return beaconCache[text];
+}
+function drawTxFrame(n) { paintBytes(enc.frame(n)); }
+function paintBytes(f) {
+  const id = tctx.createImageData(fmt.cols, fmt.rows), d = id.data;
   for (let i = 0; i < fmt.ncells; i++) {
     const v = (f[i >> 3] & (0x80 >> (i & 7))) ? 0 : 255;
     d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
@@ -761,8 +885,18 @@ function drawTxFrame(n) {
 }
 function sendLoop(now) {
   if (!sendRun) return;
+  const t = now - t0;
+  if (t < introMs) {                                   // beacon: logo, then 3-2-1
+    const st = t < beaconMs ? "BrAiNVC" : String(3 - Math.floor((t - beaconMs) / 1000));
+    if (st !== lastIntro) {
+      lastIntro = st; paintBytes(beaconFrame(st));
+      $("txInfo").textContent = st === "BrAiNVC" ? "Beacon: start the receiver and align it now ..." : "Starting in " + st + " ...";
+    }
+    requestAnimationFrame(sendLoop);
+    return;
+  }
   const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
-  const idx = Math.floor((now - t0) * fps / 1000);
+  const idx = Math.floor((t - introMs) * fps / 1000);
   if (idx !== lastIdx) {
     lastIdx = idx;
     const n = idx % enc.N;
@@ -770,11 +904,18 @@ function sendLoop(now) {
   }
   requestAnimationFrame(sendLoop);
 }
-$("bStart").onclick = () => { if (!enc) return; sendRun = true; t0 = performance.now(); lastIdx = -1; updateTxButtons(); requestAnimationFrame(sendLoop); };
+$("bStart").onclick = () => {
+  if (!enc) return;
+  const bs = clamp(parseFloat($("numBeacon").value) || 0, 0, 30);
+  beaconMs = bs * 1000; introMs = bs > 0 ? beaconMs + 3000 : 0; lastIntro = "";
+  sendRun = true; t0 = performance.now(); lastIdx = -1; updateTxButtons(); requestAnimationFrame(sendLoop);
+};
 function haltSend() { sendRun = false; updateTxButtons(); }
 $("bHalt").onclick = haltSend;
 $("bFull").onclick = () => { const w = $("tcWrap"); (w.requestFullscreen || w.webkitRequestFullscreen).call(w); };
 $("numFps").onchange = () => { store.set("fps", $("numFps").value); };
+$("numBeacon").onchange = () => { store.set("beacon", $("numBeacon").value); };
+{ const v = store.get("beacon", null); if (v !== null) $("numBeacon").value = v; }
 { const v = store.get("fps", null); if (v) $("numFps").value = v; }
 
 // ---- start
