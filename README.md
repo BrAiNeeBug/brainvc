@@ -13,6 +13,7 @@ latest encoding:
 https://www.youtube.com/watch?v=B48R-Uo9mwc
 
 
+Please follow the Restrictions! Because it is NOT SAFE and in TESTMODE ! realy...
 
 ## ⚠️ Disclaimer & Usage Restrictions
 
