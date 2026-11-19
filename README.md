@@ -1,3 +1,6 @@
+*Note: for large files use the windows runtime and ffmpeg
+also the WebVersion is much more performant when decoding the runtime is more an gadged but good for encoding stuff..
+
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
 
