@@ -41,7 +41,7 @@ audio{width:100%;max-width:520px}
 </head>
 <body>
 <header>
-  <h1>BrAiNVC<span>optical data link, web edition 2.1</span></h1>
+  <h1>BrAiNVC<span>optical data link, web edition</span></h1>
   <nav>
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
@@ -66,8 +66,9 @@ audio{width:100%;max-width:520px}
     <button id="bCam">Camera</button>
     <button id="bFile">Video file&hellip;</button>
     <input id="vfile" type="file" accept="video/*" hidden>
-    <label class="dim">File speed <select id="selSpeed"><option value="auto" selected>Auto (max)</option><option value="1">1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></label>
-    <button id="bRestart" title="Play the video file again from the beginning">&#10227; Restart pass</button>
+    <label class="dim">File <select id="selFileMode"><option value="exact" selected>Exact (every frame)</option><option value="play">Play</option></select></label>
+    <label class="dim">Play speed <select id="selSpeed"><option value="0.5">0.5&times;</option><option value="1" selected>1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option></select></label>
+    <button id="bRestart" title="Start the video file again from the beginning">&#10227; Restart pass</button>
     <button id="bStop" disabled>Stop</button>
     <span class="dim">&nbsp;Mode:</span>
     <label><input type="radio" name="mode" value="live" checked> Live play</label>
@@ -533,7 +534,9 @@ const vid = $("vid"), ov = $("ov"), ovCtx = ov.getContext("2d"), aud = $("aud");
 const roi = document.createElement("canvas"), rctx = roi.getContext("2d", { willReadFrequently: true });
 let srcType = "screen";                  // screen | camera | file
 // file playback control: adaptive speed + skipping what we already have
-const fp = { rate: 1, lastCtl: 0, mode: "read", curN: -1, lastN: -1, lastOk: 0, seen: 0, steps: 0, gaps: 0, cov: null, passes: 0, lastMedia: 0, beacon: null };
+const fp = { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0 };
+// "Exact" file mode: the video is paused and stepped through frame by frame, so no frame can be dropped or missed
+const ex = { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, sentAt: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 };
 let stream = null, running = false, kind = "screen", quadN = null, sampler = null, samplerDirty = true;
 let lumBuf = null, asm = null, completed = false, result = null, resultUrl = null;
 let cntScan = 0, cntOk = 0, rateScan = 0, rateOk = 0, lastPv = 0, lastThr = 128;
@@ -587,6 +590,7 @@ async function startSource(k) {
 function stopSource() {
   running = false;
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  ex.on = false; ex.phase = "off";
   vid.pause(); vid.srcObject = null;
   updateButtons();
 }
@@ -596,18 +600,26 @@ $("bFile").onclick = () => $("vfile").click();
 $("vfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   stopSource(); srcType = "file"; kind = "screen";
-  Object.assign(fp, { rate: 1, lastCtl: 0, mode: "read", curN: -1, lastN: -1, lastOk: 0, seen: 0, steps: 0, gaps: 0, cov: null, passes: 0, lastMedia: 0, beacon: null });
-  vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true;
-  vid.playbackRate = "requestVideoFrameCallback" in vid ? 1 : 0.5;
+  Object.assign(fp, { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0 });
+  Object.assign(ex, { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 });
+  const exact = $("selFileMode").value === "exact" && "requestVideoFrameCallback" in vid;
+  vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.muted = true; vid.loop = !exact;
+  vid.playbackRate = exact ? 1 : (parseFloat($("selSpeed").value) || 1);
   loadQuad();
   running = true; updateButtons();
+  ex.on = exact; ex.phase = exact ? "probe" : "off"; ex.sentAt = performance.now();
   try { await vid.play(); } catch (err) {}
-  vid.currentTime = 0;
+  if (!exact) vid.currentTime = 0;
   loop();                                  // callback is registered right at the start, so the beginning is not lost
-  setStatus("Playing video file as fast as possible (known parts are skipped, gaps are read again in the next pass).");
+  setStatus(exact ? "Exact mode: measuring the frame rate, then stepping through every frame ..." : "Playing the file like a live stream (loops until everything has arrived).");
 };
 $("bStop").onclick = stopSource;
-$("bRestart").onclick = () => { if (srcType === "file" && running) { vid.currentTime = 0; fp.lastN = -1; fp.lastOk = performance.now(); } };
+$("bRestart").onclick = () => {
+  if (srcType !== "file" || !running) return;
+  if (ex.on && ex.phase === "step") { ex.lastN = -1; ex.lastK = -1; exactSeek(0); } else vid.currentTime = 0;
+};
+$("selFileMode").onchange = () => { store.set("filemode", $("selFileMode").value); };
+{ const v = store.get("filemode", null); if (v) $("selFileMode").value = v; }
 $("selSpeed").onchange = () => { store.set("speed", $("selSpeed").value); };
 { const v = store.get("speed", null); if (v) $("selSpeed").value = v; }
 $("bReset").onclick = () => { resetReceiver(); };
@@ -661,7 +673,17 @@ function loop() {
   if (!running) return;
   const cb = (now, meta) => {
     if (!running) return;
-    try { if (srcType === "file" && meta) controlFile(meta); processFrame(); } catch (e) { console.error(e); }
+    try {
+      let go = true;
+      if (srcType === "file" && meta) {
+        if (ex.on) go = exactCallback(meta);
+        else { if (meta.mediaTime < fp.lastMedia - 0.5) fp.passes++; fp.lastMedia = meta.mediaTime; }
+      }
+      if (go) {
+        processFrame();
+        if (srcType === "file" && ex.on && ex.phase === "step" && !completed) exactAdvance();
+      }
+    } catch (e) { console.error(e); }
     loop();
   };
   if ("requestVideoFrameCallback" in vid) vid.requestVideoFrameCallback(cb); else requestAnimationFrame(cb);
@@ -670,7 +692,9 @@ function processFrame() {
   const vw = vid.videoWidth, vh = vid.videoHeight;
   if (!vw || !quadN) return;
   if (samplerDirty || !sampler || sampler.vw !== vw || sampler.vh !== vh) {
-    sampler = buildSampler(fmt, quadN.map(p => [p[0] * vw, p[1] * vh]), vw, vh, 1280);
+    // 5 pixels per cell are plenty for clean video; the smaller readback keeps playback smooth (camera needs more)
+    const maxW = srcType === "camera" ? 1280 : Math.max(480, Math.min(1280, fmt.cols * 5));
+    sampler = buildSampler(fmt, quadN.map(p => [p[0] * vw, p[1] * vh]), vw, vh, maxW);
     roi.width = sampler.sw; roi.height = sampler.sh; samplerDirty = false;
   }
   rctx.drawImage(vid, sampler.bx, sampler.by, sampler.bw, sampler.bh, 0, 0, sampler.sw, sampler.sh);
@@ -680,63 +704,113 @@ function processFrame() {
   lastThr = res.thr; cntScan++;
   const now = performance.now();
   if (now - lastPv > 120) { lastPv = now; drawPreview(res.contrast >= 40); }
-  if (!res.frame && res.contrast >= 40 && now - lastBeacon > 200) { lastBeacon = now; const bm = beaconMatch(fmt, lumBuf, res.thr, tpls); fp.beacon = { name: bm.name, ratio: bm.ratio, t: now }; showBeacon(bm); }
+  if (!res.frame && res.contrast >= 40 && now - lastBeacon > (ex.on ? 0 : 200)) {
+    lastBeacon = now; const bm = beaconMatch(fmt, lumBuf, res.thr, tpls);
+    fp.beacon = { name: bm.name, ratio: bm.ratio, t: now }; if (bm.ratio >= 0.85) fp.beaconSeq++;
+    showBeacon(bm);
+  }
   else if (res.frame && now - lastBeacon > 1500) { lastBeacon = now; $("beacon").textContent = ""; }
   if (res.frame) {
     cntOk++;
-    if (srcType === "file") {
-      const fn = res.frame.n;
-      if (fp.lastN >= 0 && fn > fp.lastN && fn - fp.lastN <= 40) { fp.steps += fn - fp.lastN; fp.gaps += fn - fp.lastN - 1; }
-      fp.lastN = fn; fp.curN = fn; fp.lastOk = performance.now(); fp.seen++;
-    }
+    if (srcType === "file") { fp.seen++; if (ex.on && ex.phase === "step") exactLearn(res.frame.n); }
     if (!completed) {
       const f = res.frame;
       if (asm.add(f.n, f.N, f.L, f.payload)) { liveTick(); checkComplete(); updateButtons(); }
     }
   }
 }
-// File playback is not live, so it can run as fast as the decoder allows. Losses are fine: the file loops and
-// every pass fills the gaps (plus error correction). The speed is steered like this:
-//  - reading new data: speed adapts so that about 85-97% of the data frames are caught (more speed when everything arrives)
-//  - parts we already have completely, beacon logo, unreadable parts ("dead zones"): run through fast
-//  - countdown 3-2-1: normal speed, so the start of the data is not skipped
-//  - no valid frame for 3 s after data was seen: jump back to the beginning and go again
-function controlFile(meta) {
-  const nowT = performance.now();
-  if (meta.mediaTime < fp.lastMedia - 0.5) { fp.passes++; fp.lastN = -1; }     // video wrapped around: new pass
-  fp.lastMedia = meta.mediaTime;
-  if (nowT - fp.lastCtl < 100) return;
-  fp.lastCtl = nowT;
-  const fixed = parseFloat($("selSpeed").value);                               // NaN for "Auto"
-  const top = isNaN(fixed) ? 8 : Math.max(fixed, 4);                           // fast-forward speed
-  const bk = fp.beacon && nowT - fp.beacon.t < 700 && fp.beacon.ratio >= 0.85 ? fp.beacon.name : null;
-  let target;
-  if (bk === "logo") { target = 4; fp.mode = "beacon"; }
-  else if (bk) { target = 1; fp.mode = "countdown"; }
-  else if (fp.seen > 0 && nowT - fp.lastOk > 500) {
-    target = top; fp.mode = "dead";
-    if (nowT - fp.lastOk > 3000) { vid.currentTime = 0; fp.lastOk = nowT; fp.lastN = -1; }   // scan stopped: restart the pass
-  } else {
-    fp.mode = "read";
-    if (isNaN(fixed)) {
-      if (fp.steps >= 20) {
-        fp.cov = 1 - fp.gaps / fp.steps;
-        if (fp.cov < 0.85) fp.rate = Math.max(0.25, fp.rate * 0.8);
-        else if (fp.cov > 0.97) fp.rate = Math.min(top, fp.rate * 1.25);
-        fp.steps = 0; fp.gaps = 0;
-      }
-      target = fp.rate;
-    } else target = fixed;
-    if (asm && asm.N && fp.curN >= 0 && !asm.allReady()) {                     // parts we already have: run through
-      const g = Math.floor(fp.curN / fmt.S);
-      let ahead = true;
-      for (let k = 0; k <= 4; k++) if (g + k < asm.G && !asm.groupReady(g + k)) { ahead = false; break; }
-      if (ahead) { target = top; fp.mode = "skip"; }
+// ---------------------------------------------------------------- exact file mode
+// A file is not live, so nothing has to be played in real time. The video is paused and we seek to the
+// middle of every frame we want, wait until exactly that frame is presented, and decode it. Nothing is
+// dropped, nothing depends on playback speed. The step size follows the data frame hold time, parts we
+// already have are jumped over, the beacon logo is skipped quickly, and at the end of the file we start over.
+const FPS_SNAP = [24, 25, 30, 48, 50, 60, 72, 90, 100, 120];
+function exactCallback(meta) {
+  ex.sentAt = performance.now();
+  if (ex.phase === "probe") {                         // watch normal playback for a moment to learn the frame interval
+    ex.probe.push(meta.mediaTime);
+    if (ex.probe.length >= 14) exactFinishProbe();
+    return false;
+  }
+  if (Math.abs(meta.mediaTime - ex.expect) < 0.75 / ex.fps) { ex.stalls = 0; return true; }
+  return false;                                       // a stale frame from before the seek
+}
+function exactFinishProbe() {
+  const t = [...new Set(ex.probe)].sort((a, b) => a - b);
+  let dt = 1 / 30;
+  for (let i = 1; i < t.length; i++) { const d = t[i] - t[i - 1]; if (d > 0.002 && (dt === 1 / 30 || d < dt)) dt = d; }
+  const raw = 1 / dt;
+  let fps = FPS_SNAP[0];
+  for (const c of FPS_SNAP) if (Math.abs(c - raw) < Math.abs(fps - raw)) fps = c;
+  vid.pause();
+  ex.fps = fps; ex.total = Math.max(2, Math.floor(vid.duration * fps)); ex.phase = "step"; ex.pass = 0;
+  exactSeek(0);
+  setStatus("Exact mode: stepping through every frame (video has " + fps + " frames/s).");
+}
+function exactSeek(k, nudge) {
+  ex.k = k; ex.expect = k / ex.fps; ex.sentAt = performance.now(); ex.seqAtSeek = fp.beaconSeq;
+  vid.currentTime = (k + 0.5) / ex.fps + (nudge || 0);
+}
+// a valid data frame n was decoded at video frame ex.k: learn how many video frames one data frame lasts
+function exactLearn(n) {
+  ex.gotOk = true; ex.noOk = 0;
+  if (ex.lastN >= 0 && n > ex.lastN && ex.k > ex.lastK && n - ex.lastN <= 60) {
+    const hn = (ex.k - ex.lastK) / (n - ex.lastN);
+    if (hn >= 1 && hn <= 120) ex.h = 0.6 * ex.h + 0.4 * hn;
+  }
+  if (ex.lastN < 0) ex.needBack = true;               // first valid frame of this pass
+  if (n !== ex.lastN) { ex.lastN = n; ex.lastK = ex.k; }   // anchor on the FIRST sample of each data frame, so (k difference) = hold time
+}
+function exactAdvance() {
+  if (!ex.gotOk) ex.noOk++;
+  ex.gotOk = false;
+  // first data frame of a pass: if earlier groups are still missing (e.g. skipped while crossing the beacon), go back for them
+  if (ex.needBack && ex.lastN >= 0) {
+    ex.needBack = false;
+    let gM = -1;
+    for (let q = 0; q < asm.G; q++) if (!asm.groupReady(q)) { gM = q; break; }
+    if (gM >= 0 && gM * fmt.S < ex.lastN - 1) {
+      const k = Math.max(0, Math.floor(ex.lastK + (gM * fmt.S - ex.lastN) * ex.h) - Math.ceil(ex.h * 2));
+      ex.lastStep = k - ex.k; ex.lastN = -1; ex.lastK = -1;
+      exactSeek(k);
+      return;
     }
   }
-  target = clamp(target, 0.25, 16);
-  if (Math.abs(vid.playbackRate - target) > 0.01) vid.playbackRate = target;
+  let step = Math.max(1, Math.floor(ex.h * 0.5));                                   // about two samples per data frame
+  const bk = fp.beaconSeq > ex.seqAtSeek ? fp.beacon.name : null;                   // was the frame we just looked at a beacon image?
+  if (bk === "logo") step = Math.max(1, Math.round(ex.fps / 3));                    // logo: skip quickly
+  else if (bk === "d3" || bk === "d2") step = Math.max(1, Math.round(ex.fps / 2));  // each digit lasts a second, so this cannot overshoot
+  else if (bk === "d1") step = 1;                                                   // last digit: creep up to the first data frame
+  else if (ex.noOk >= 4 && fp.seen > 0) step = Math.max(1, Math.round(ex.fps / 8)); // unreadable part: run through
+  else if (asm && asm.N && ex.lastN >= 0 && !asm.allReady()) {                      // jump over parts we already have
+    const g = Math.floor(ex.lastN / fmt.S);
+    let gStar = -1;
+    for (let q = g + 1; q < asm.G; q++) if (!asm.groupReady(q)) { gStar = q; break; }
+    if (gStar > g + 2) {
+      const jump = Math.floor((gStar * fmt.S - ex.lastN) * ex.h) - Math.ceil(ex.h * 3);
+      if (jump > step) step = jump;
+    }
+  }
+  ex.lastStep = step;
+  let k = ex.k + step;
+  if (k >= ex.total - 1) { k = 0; ex.pass++; ex.lastN = -1; ex.lastK = -1; fp.passes = ex.pass; }   // end of file: go again
+  exactSeek(k);
 }
+function exactFallback(msg) {
+  ex.on = false; ex.phase = "off";
+  vid.loop = true; vid.playbackRate = parseFloat($("selSpeed").value) || 1; vid.play().catch(() => {});
+  setStatus("Exact mode not available here (" + msg + "), playing the file normally instead.", "bad");
+}
+setInterval(() => {                                                                // watchdog for browsers that do not deliver frames after a seek
+  if (!running || srcType !== "file" || !ex.on) return;
+  const t = performance.now();
+  if (ex.phase === "probe") { if (t - ex.sentAt > 3000) exactFallback("no frames while measuring"); return; }
+  if (ex.phase === "step" && !completed && t - ex.sentAt > 1500) {
+    if (++ex.stalls > 3) exactFallback("seeking did not deliver frames");
+    else exactSeek(ex.k, 0.0001 * ex.stalls);
+  }
+}, 500);
+
 const BEACON_NAMES = { logo: "Beacon", d3: "Countdown 3", d2: "Countdown 2", d1: "Countdown 1" };
 // alignment feedback while the beacon is on screen: how much of the picture matches the expected image
 function showBeacon(m) {
@@ -867,7 +941,10 @@ setInterval(() => {
     "scans/s: <b>" + rateScan + "</b> &nbsp; valid/s: <b class='" + (rateOk ? "ok" : "") + "'>" + rateOk + "</b><br>" +
     "frames: <b>" + have + "</b> / " + (asm.N || "?") + (need ? " (need " + need + " in the right groups)" : "") + "<br>" +
     "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf +
-    (running && srcType === "file" ? "<br>file: speed <b>" + vid.playbackRate.toFixed(2) + "x</b> (" + ({ skip: "skipping known parts", dead: "running through", beacon: "beacon", countdown: "countdown" }[fp.mode] || "reading") + "), pass " + (fp.passes + 1) + (fp.cov !== null ? ", coverage " + Math.round(fp.cov * 100) + "%" : "") : "");
+    (running && srcType === "file" ? (ex.on && ex.phase === "step"
+      ? "<br>file: exact, frame <b>" + ex.k + "</b> / " + ex.total + ", step " + ex.lastStep + ", " + ex.h.toFixed(1) + " video frames per data frame, pass " + (ex.pass + 1)
+      : ex.on ? "<br>file: measuring frame rate ..."
+      : "<br>file: playing at <b>" + vid.playbackRate.toFixed(2) + "x</b>, pass " + (fp.passes + 1)) : "");
   if (running && asm.N && !completed && mode() === "live") liveTick();
 }, 1000);
 
