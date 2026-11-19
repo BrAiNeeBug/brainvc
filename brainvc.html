@@ -66,6 +66,8 @@ audio{width:100%;max-width:520px}
     <button id="bCam">Camera</button>
     <button id="bFile">Video file&hellip;</button>
     <input id="vfile" type="file" accept="video/*" hidden>
+    <label class="dim">File speed <select id="selSpeed"><option value="auto" selected>Auto (max)</option><option value="1">1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></label>
+    <button id="bRestart" title="Play the video file again from the beginning">&#10227; Restart pass</button>
     <button id="bStop" disabled>Stop</button>
     <span class="dim">&nbsp;Mode:</span>
     <label><input type="radio" name="mode" value="live" checked> Live play</label>
@@ -531,7 +533,7 @@ const vid = $("vid"), ov = $("ov"), ovCtx = ov.getContext("2d"), aud = $("aud");
 const roi = document.createElement("canvas"), rctx = roi.getContext("2d", { willReadFrequently: true });
 let srcType = "screen";                  // screen | camera | file
 // file playback control: adaptive speed + skipping what we already have
-const fp = { base: 0.5, lastPresented: 0, missed: 0, calm: 0, lastCtl: 0, mode: "read", curN: -1, lastOk: 0, passes: 0, lastMedia: 0 };
+const fp = { rate: 1, lastCtl: 0, mode: "read", curN: -1, lastN: -1, lastOk: 0, seen: 0, steps: 0, gaps: 0, cov: null, passes: 0, lastMedia: 0, beacon: null };
 let stream = null, running = false, kind = "screen", quadN = null, sampler = null, samplerDirty = true;
 let lumBuf = null, asm = null, completed = false, result = null, resultUrl = null;
 let cntScan = 0, cntOk = 0, rateScan = 0, rateOk = 0, lastPv = 0, lastThr = 128;
@@ -594,17 +596,20 @@ $("bFile").onclick = () => $("vfile").click();
 $("vfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   stopSource(); srcType = "file"; kind = "screen";
-  Object.assign(fp, { base: 0.5, lastPresented: 0, missed: 0, calm: 0, lastCtl: 0, mode: "read", curN: -1, lastOk: 0, passes: 0, lastMedia: 0 });
+  Object.assign(fp, { rate: 1, lastCtl: 0, mode: "read", curN: -1, lastN: -1, lastOk: 0, seen: 0, steps: 0, gaps: 0, cov: null, passes: 0, lastMedia: 0, beacon: null });
   vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true;
-  vid.playbackRate = "requestVideoFrameCallback" in vid ? fp.base : 0.25;
+  vid.playbackRate = "requestVideoFrameCallback" in vid ? 1 : 0.5;
   loadQuad();
   running = true; updateButtons();
   try { await vid.play(); } catch (err) {}
   vid.currentTime = 0;
   loop();                                  // callback is registered right at the start, so the beginning is not lost
-  setStatus("Playing video file (speed adapts automatically, known parts are skipped). Place the corners on the code.");
+  setStatus("Playing video file as fast as possible (known parts are skipped, gaps are read again in the next pass).");
 };
 $("bStop").onclick = stopSource;
+$("bRestart").onclick = () => { if (srcType === "file" && running) { vid.currentTime = 0; fp.lastN = -1; fp.lastOk = performance.now(); } };
+$("selSpeed").onchange = () => { store.set("speed", $("selSpeed").value); };
+{ const v = store.get("speed", null); if (v) $("selSpeed").value = v; }
 $("bReset").onclick = () => { resetReceiver(); };
 
 // ---- corner overlay
@@ -675,38 +680,61 @@ function processFrame() {
   lastThr = res.thr; cntScan++;
   const now = performance.now();
   if (now - lastPv > 120) { lastPv = now; drawPreview(res.contrast >= 40); }
-  if (!res.frame && res.contrast >= 40 && now - lastBeacon > 200) { lastBeacon = now; showBeacon(beaconMatch(fmt, lumBuf, res.thr, tpls)); }
+  if (!res.frame && res.contrast >= 40 && now - lastBeacon > 200) { lastBeacon = now; const bm = beaconMatch(fmt, lumBuf, res.thr, tpls); fp.beacon = { name: bm.name, ratio: bm.ratio, t: now }; showBeacon(bm); }
   else if (res.frame && now - lastBeacon > 1500) { lastBeacon = now; $("beacon").textContent = ""; }
   if (res.frame) {
     cntOk++;
-    if (srcType === "file") { fp.curN = res.frame.n; fp.lastOk = performance.now(); }
+    if (srcType === "file") {
+      const fn = res.frame.n;
+      if (fp.lastN >= 0 && fn > fp.lastN && fn - fp.lastN <= 40) { fp.steps += fn - fp.lastN; fp.gaps += fn - fp.lastN - 1; }
+      fp.lastN = fn; fp.curN = fn; fp.lastOk = performance.now(); fp.seen++;
+    }
     if (!completed) {
       const f = res.frame;
       if (asm.add(f.n, f.N, f.L, f.payload)) { liveTick(); checkComplete(); updateButtons(); }
     }
   }
 }
-// File playback is not live, so nothing has to be lost:
-//  - if frames get dropped because decoding is slower than playback, the speed is reduced step by step
-//  - while the playhead is inside a part whose groups we already have, it runs fast (skip mode)
-//  - the file loops, so missing parts are simply read again in the next pass
+// File playback is not live, so it can run as fast as the decoder allows. Losses are fine: the file loops and
+// every pass fills the gaps (plus error correction). The speed is steered like this:
+//  - reading new data: speed adapts so that about 85-97% of the data frames are caught (more speed when everything arrives)
+//  - parts we already have completely, beacon logo, unreadable parts ("dead zones"): run through fast
+//  - countdown 3-2-1: normal speed, so the start of the data is not skipped
+//  - no valid frame for 3 s after data was seen: jump back to the beginning and go again
 function controlFile(meta) {
-  if (fp.lastPresented && fp.mode === "read" && meta.presentedFrames - fp.lastPresented > 1) fp.missed += meta.presentedFrames - fp.lastPresented - 1;
-  fp.lastPresented = meta.presentedFrames;
-  if (meta.mediaTime < fp.lastMedia - 0.5) fp.passes++;
+  const nowT = performance.now();
+  if (meta.mediaTime < fp.lastMedia - 0.5) { fp.passes++; fp.lastN = -1; }     // video wrapped around: new pass
   fp.lastMedia = meta.mediaTime;
-  const t = performance.now();
-  if (t - fp.lastCtl < 300) return;
-  fp.lastCtl = t;
-  if (fp.missed > 0) { fp.base = Math.max(0.1, fp.base * 0.7); fp.missed = 0; fp.calm = 0; }
-  else if (++fp.calm >= 4 && fp.base < 1) { fp.base = Math.min(1, fp.base * 1.15); fp.calm = 0; }
-  let target = fp.base; fp.mode = "read";
-  if (asm && asm.N && fp.curN >= 0 && t - fp.lastOk < 700 && !asm.allReady()) {
-    const g = Math.floor(fp.curN / fmt.S);
-    let ahead = true;
-    for (let k = 0; k <= 4; k++) if (g + k < asm.G && !asm.groupReady(g + k)) { ahead = false; break; }
-    if (ahead) { target = 4; fp.mode = "skip"; }
+  if (nowT - fp.lastCtl < 100) return;
+  fp.lastCtl = nowT;
+  const fixed = parseFloat($("selSpeed").value);                               // NaN for "Auto"
+  const top = isNaN(fixed) ? 8 : Math.max(fixed, 4);                           // fast-forward speed
+  const bk = fp.beacon && nowT - fp.beacon.t < 700 && fp.beacon.ratio >= 0.85 ? fp.beacon.name : null;
+  let target;
+  if (bk === "logo") { target = 4; fp.mode = "beacon"; }
+  else if (bk) { target = 1; fp.mode = "countdown"; }
+  else if (fp.seen > 0 && nowT - fp.lastOk > 500) {
+    target = top; fp.mode = "dead";
+    if (nowT - fp.lastOk > 3000) { vid.currentTime = 0; fp.lastOk = nowT; fp.lastN = -1; }   // scan stopped: restart the pass
+  } else {
+    fp.mode = "read";
+    if (isNaN(fixed)) {
+      if (fp.steps >= 20) {
+        fp.cov = 1 - fp.gaps / fp.steps;
+        if (fp.cov < 0.85) fp.rate = Math.max(0.25, fp.rate * 0.8);
+        else if (fp.cov > 0.97) fp.rate = Math.min(top, fp.rate * 1.25);
+        fp.steps = 0; fp.gaps = 0;
+      }
+      target = fp.rate;
+    } else target = fixed;
+    if (asm && asm.N && fp.curN >= 0 && !asm.allReady()) {                     // parts we already have: run through
+      const g = Math.floor(fp.curN / fmt.S);
+      let ahead = true;
+      for (let k = 0; k <= 4; k++) if (g + k < asm.G && !asm.groupReady(g + k)) { ahead = false; break; }
+      if (ahead) { target = top; fp.mode = "skip"; }
+    }
   }
+  target = clamp(target, 0.25, 16);
   if (Math.abs(vid.playbackRate - target) > 0.01) vid.playbackRate = target;
 }
 const BEACON_NAMES = { logo: "Beacon", d3: "Countdown 3", d2: "Countdown 2", d1: "Countdown 1" };
@@ -839,7 +867,7 @@ setInterval(() => {
     "scans/s: <b>" + rateScan + "</b> &nbsp; valid/s: <b class='" + (rateOk ? "ok" : "") + "'>" + rateOk + "</b><br>" +
     "frames: <b>" + have + "</b> / " + (asm.N || "?") + (need ? " (need " + need + " in the right groups)" : "") + "<br>" +
     "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf +
-    (running && srcType === "file" ? "<br>file: speed <b>" + vid.playbackRate.toFixed(2) + "x</b> (" + (fp.mode === "skip" ? "skipping known parts" : "reading") + "), pass " + (fp.passes + 1) : "");
+    (running && srcType === "file" ? "<br>file: speed <b>" + vid.playbackRate.toFixed(2) + "x</b> (" + ({ skip: "skipping known parts", dead: "running through", beacon: "beacon", countdown: "countdown" }[fp.mode] || "reading") + "), pass " + (fp.passes + 1) + (fp.cov !== null ? ", coverage " + Math.round(fp.cov * 100) + "%" : "") : "");
   if (running && asm.N && !completed && mode() === "live") liveTick();
 }, 1000);
 
