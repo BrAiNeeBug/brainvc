@@ -5,8 +5,10 @@ only the WebVersion can decode files the runtime is only for testing live en_de-
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
 
-latest test decoding realtime:
+latest test decoding realtime v2.3:
 https://www.youtube.com/watch?v=UmDyXyGJnX0
+
+<img width="1853" height="871" alt="{F3E3DEF7-1A18-4163-8FD9-178869F9EA32}" src="https://github.com/user-attachments/assets/2d3efc96-b3a4-49c3-904a-95ee7031f05e" />
 
 
 Please follow the Restrictions! Because it is NOT SAFE and in TESTMODE ! realy...
