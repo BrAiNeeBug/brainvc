@@ -5,119 +5,201 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrAiNVC web</title>
 <style>
-:root{--bg:#101216;--card:#181b21;--line:#2a2f38;--txt:#e6e8ec;--dim:#8a93a2;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
+:root{--bg:#0e1014;--panel:#15181e;--panel2:#1b1f27;--line:#272c36;--txt:#e8eaee;--dim:#8b94a3;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
-h1{font-size:18px;margin:0;font-weight:600}
-h1 span{color:var(--dim);font-weight:400;font-size:13px;margin-left:6px}
-nav{display:flex;gap:6px;margin-left:auto}
-main{max-width:1000px;margin:0 auto;padding:14px 16px 40px}
-button,select,input{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
-button{cursor:pointer}
-button:hover{border-color:var(--acc)}
-button.on,button.primary{background:var(--acc);color:#04202e;border-color:var(--acc);font-weight:600}
+html{color-scheme:dark}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;padding:10px 18px;background:rgba(14,16,20,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.logo{font-weight:700;letter-spacing:.3px;font-size:17px}
+.logo b{color:var(--acc)}
+.logo span{color:var(--dim);font-weight:400;font-size:12.5px;margin-left:8px}
+header nav{margin-left:auto}
+main{max-width:1040px;margin:0 auto;padding:16px 18px 48px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
+.panel-row{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field.grow{flex:1;min-width:200px}
+.cap{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+.hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+.dim{color:var(--dim)}.ok{color:var(--ok)}.bad{color:var(--bad)}
+
+button,select,input[type=number],input[type=file]{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:0 12px;height:36px}
+input[type=number]{width:92px}
+select{padding-right:6px}
+button{cursor:pointer;transition:border-color .12s,background .12s}
+button:hover:not(:disabled),select:hover,input[type=number]:hover{border-color:#3a6c86}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 button:disabled{opacity:.4;cursor:default}
-input[type=number]{width:80px}
-.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}
-.dim{color:var(--dim)}
-.stage{position:relative;width:100%;max-width:960px;min-height:140px;background:#000;border-radius:8px;overflow:hidden}
+button.primary{background:var(--acc);color:#04202e;border-color:var(--acc);font-weight:600}
+button.primary:hover:not(:disabled){background:#7ad3ff;border-color:#7ad3ff}
+button.danger:not(:disabled){border-color:#5a2e35;color:#ff9aa5}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* segmented controls (buttons or radio groups) */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel2);height:36px}
+.seg>button,.seg>label{border:0;border-radius:0;height:100%;background:transparent;display:flex;align-items:center;padding:0;cursor:pointer;white-space:nowrap}
+.seg>button{padding:0 14px}
+.seg>button+button,.seg>label+label{border-left:1px solid var(--line)}
+.seg>button.on{background:var(--acc);color:#04202e;font-weight:600}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label span{display:flex;align-items:center;height:100%;padding:0 14px}
+.seg input:checked+span{background:var(--acc);color:#04202e;font-weight:600}
+.seg input:focus-visible+span{outline:2px solid var(--acc);outline-offset:-2px}
+
+.stage{position:relative;width:100%;max-width:960px;min-height:160px;background:#05060a;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stage:not(.live)::before{content:"Choose a source above to start scanning";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
 .stage video{display:block;width:100%;height:auto}
 .stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}
-.pv{image-rendering:pixelated;width:256px;height:144px;border:1px solid var(--line);background:#000}
-.bar{height:8px;background:#0b0d10;border-radius:4px;overflow:hidden;margin:6px 0}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:12px 0 16px}
+.chk{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.chk input{width:16px;height:16px;accent-color:var(--acc)}
+
+.grid2{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start}
+@media (max-width:720px){.grid2{grid-template-columns:1fr}}
+.pv{display:block;image-rendering:pixelated;width:256px;max-width:100%;aspect-ratio:16/9;height:auto;border:1px solid var(--line);border-radius:6px;background:#000}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.tile .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.tile .v{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25}
+.tile .s{font-size:12px;color:var(--dim);min-height:18px}
+.infoline{margin-top:8px;color:var(--dim);font-size:12.5px}
+.bar{height:8px;background:#0a0c10;border:1px solid var(--line);border-radius:5px;overflow:hidden;margin:14px 0}
 .bar>i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
-.stats{font-variant-numeric:tabular-nums}
-.ok{color:var(--ok)}.bad{color:var(--bad)}
-summary{cursor:pointer;color:var(--dim)}
-label{display:inline-flex;align-items:center;gap:6px}
-#tcWrap{background:#222;padding:14px;border-radius:8px;display:flex;justify-content:center}
-#tcWrap:fullscreen{align-items:center;padding:0;background:#000}
-#tc{image-rendering:pixelated;background:#fff;border:14px solid #fff;max-width:100%;aspect-ratio:16/9;width:min(100%,calc((100vh - 260px) * 16 / 9))}
+
+details.panel>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-weight:600}
+details.panel>summary::-webkit-details-marker{display:none}
+details.panel>summary::before{content:"\25B8";color:var(--dim);transition:transform .15s}
+details.panel[open]>summary::before{transform:rotate(90deg)}
+details.panel>summary span{font-weight:400;color:var(--dim);font-size:12.5px}
+details.panel .panel-row{margin-top:12px}
+
+input[type=file]{padding:0 8px;line-height:34px;width:100%;max-width:420px}
+input[type=file]::file-selector-button{margin:5px 10px 5px 0;border:0;border-radius:6px;background:#2a3140;color:var(--txt);padding:5px 12px;cursor:pointer}
+audio{width:100%;max-width:560px}
+#status{margin-top:10px;font-size:13px}
+#tcWrap{background:#222;padding:14px;border-radius:10px;display:flex;justify-content:center;margin-bottom:14px}
+#tcWrap:fullscreen{align-items:center;padding:0;background:#000;margin:0}
+#tc{image-rendering:pixelated;background:#fff;border:14px solid #fff;max-width:100%;aspect-ratio:16/9;width:min(100%,calc((100vh - 300px) * 16 / 9))}
 #tcWrap:fullscreen #tc{width:100vw;height:100vh;max-width:none;aspect-ratio:auto;border:0}
-audio{width:100%;max-width:520px}
+code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px}
 </style>
 </head>
 <body>
 <header>
-  <h1>BrAiNVC<span>optical data link, web edition 2.2</span></h1>
-  <nav>
+  <div class="logo">Br<b>AiN</b>VC<span>optical data link &middot; web edition 2.3</span></div>
+  <nav class="seg">
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
   </nav>
 </header>
 <main>
 
-<details class="card" id="fmtBox">
-  <summary>Format (sender and receiver must use the same values)</summary>
-  <div class="row">
-    <label>Grid <select id="selGrid"><option>96x54</option><option selected>128x72</option><option>160x90</option><option>192x108</option></select></label>
-    <label>K data <input id="numK" type="number" min="1" max="64" value="8"></label>
-    <label>M parity <input id="numM" type="number" min="1" max="8" value="2"></label>
-    <span class="dim">Same frame format as brainvc.au3 (header, CRC16, Reed-Solomon over groups of K+M frames).</span>
+<details class="panel" id="fmtBox">
+  <summary>Format <span>&middot; sender and receiver must use the same values</span></summary>
+  <div class="panel-row">
+    <div class="field"><span class="cap">Grid (cells)</span>
+      <select id="selGrid"><option>96x54</option><option selected>128x72</option><option>160x90</option><option>192x108</option></select></div>
+    <div class="field"><span class="cap">Data frames per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
+    <div class="field"><span class="cap">Parity frames per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
   </div>
+  <div class="hint">Same frame format as brainvc.au3: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
 </details>
 
 <!-- ============================ RECEIVE ============================ -->
 <section id="rx">
-  <div class="row">
-    <button id="bScreen">Screen / window</button>
-    <button id="bCam">Camera</button>
-    <button id="bFile">Video file&hellip;</button>
-    <input id="vfile" type="file" accept="video/*" hidden>
-    <label class="dim">File <select id="selFileMode"><option value="exact" selected>Exact (every frame)</option><option value="play">Play</option></select></label>
-    <label class="dim">Play speed <select id="selSpeed"><option value="0.5">0.5&times;</option><option value="1" selected>1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option></select></label>
-    <button id="bRestart" title="Start the video file again from the beginning">&#10227; Restart pass</button>
-    <button id="bStop" disabled>Stop</button>
-    <span class="dim">&nbsp;Mode:</span>
-    <label><input type="radio" name="mode" value="live" checked> Live play</label>
-    <label><input type="radio" name="mode" value="save"> Save file</label>
+  <div class="panel">
+    <div class="panel-row">
+      <div class="field"><span class="cap">Source</span>
+        <div class="seg">
+          <button id="bScreen" title="Share a screen, window or browser tab">Screen / window</button>
+          <button id="bCam" title="Use the camera">Camera</button>
+          <button id="bFile" title="Read a video file">Video file&hellip;</button>
+        </div>
+        <input id="vfile" type="file" accept="video/*" hidden>
+      </div>
+      <div class="field"><span class="cap">Mode</span>
+        <div class="seg" title="Live play starts the music while the data is still arriving. Save file collects everything and downloads it at the end.">
+          <label><input type="radio" name="mode" value="live" checked><span>Live play</span></label>
+          <label><input type="radio" name="mode" value="save"><span>Save file</span></label>
+        </div>
+      </div>
+      <div class="field" id="grpPre"><span class="cap">Live pre-buffer (s)</span>
+        <input id="numPre" type="number" min="0" max="120" value="10" title="Playback starts only after this many seconds of audio are buffered, and pauses to refill if the buffer runs dry. 0 = start immediately.">
+      </div>
+      <div class="field" id="grpFile"><span class="cap">Video file reading</span>
+        <div class="seg" title="Exact steps through every frame and never misses one. Play runs the file like a live stream.">
+          <label><input type="radio" name="fmode" value="exact" checked><span>Exact</span></label>
+          <label><input type="radio" name="fmode" value="play"><span>Play</span></label>
+        </div>
+      </div>
+      <div class="field" id="grpSpeed" hidden><span class="cap">Play speed</span>
+        <select id="selSpeed"><option value="0.5">0.5&times;</option><option value="1" selected>1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option></select>
+      </div>
+      <div class="field grow"></div>
+      <div class="field"><span class="cap">&nbsp;</span>
+        <div class="btnrow">
+          <button id="bRestart" title="Start the video file again from the beginning">&#10227; Restart pass</button>
+          <button id="bStop" class="danger" disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint" id="fileHint"></div>
   </div>
 
   <div class="stage"><video id="vid" playsinline muted></video><canvas id="ov"></canvas></div>
-  <div class="row">
-    <button id="bRot" title="Rotate which corner is the top-left of the code">&#8635; Rotate corners</button>
+  <div class="toolbar">
+    <button id="bRot" title="Rotate which corner is the top-left of the code">&#8635; Rotate</button>
     <button id="bMir" title="Mirror horizontally (e.g. selfie camera)">&#8596; Mirror</button>
     <button id="bRst">Reset corners</button>
-    <label><input type="checkbox" id="chkRem"> Remember my corners</label>
-    <span class="dim">By default the whole video frame is read. Drag the corners only if the code sits in a smaller area (TL = top-left of the code).</span>
+    <label class="chk"><input type="checkbox" id="chkRem"><span>Remember my corners</span></label>
+    <span class="hint" style="margin:0">By default the whole video frame is read. Drag the corners only if the code sits in a smaller area (TL = top-left of the code).</span>
   </div>
 
-  <div class="row" style="align-items:flex-start">
-    <div><div class="dim">What the scanner sees</div><canvas id="pv" class="pv" width="128" height="72"></canvas><div id="beacon" class="dim" style="margin-top:4px;min-height:20px"></div></div>
-    <div class="stats" id="stats" style="min-width:260px"></div>
+  <div class="grid2">
+    <div>
+      <div class="cap" style="margin-bottom:6px">What the scanner sees</div>
+      <canvas id="pv" class="pv" width="128" height="72"></canvas>
+      <div id="beacon" class="dim" style="margin-top:6px;min-height:20px;font-size:12.5px"></div>
+    </div>
+    <div class="stats" id="stats"></div>
   </div>
   <div class="bar"><i id="barG"></i></div>
 
-  <div class="card">
-    <div class="row" style="margin-top:0">
-      <audio id="aud" controls></audio>
-    </div>
-    <div class="row">
+  <div class="panel">
+    <audio id="aud" controls></audio>
+    <div class="btnrow" style="margin-top:12px">
       <button id="bPartial" disabled>Save partial</button>
       <button id="bDl" class="primary" disabled>Download</button>
       <button id="bReset">Reset</button>
     </div>
     <div id="status" class="dim"></div>
   </div>
-  <div class="dim">Tips: with a camera keep the code big and the phone steady, use a low data rate (about 5&ndash;8 frames/s) and avoid reflections.
+  <div class="hint">Tips: with a camera keep the code big and the phone steady, use a low data rate (about 5&ndash;8 frames/s) and avoid reflections.
   Live play works for MP3 and WebM/Opus streams; other files are saved and, if they are audio, played after the transfer completes.</div>
 </section>
 
 <!-- ============================== SEND ============================== -->
 <section id="tx" hidden>
-  <div class="row">
-    <input id="sfile" type="file">
-    <label>Data frames/s <input id="numFps" type="number" min="1" max="30" value="10"></label>
-    <label>Beacon <input id="numBeacon" type="number" min="0" max="30" value="5"> s + 3-2-1</label>
-    <button id="bStart" class="primary" disabled>Start</button>
-    <button id="bHalt" disabled>Stop</button>
-    <button id="bFull" disabled>Fullscreen</button>
+  <div class="panel">
+    <div class="panel-row">
+      <div class="field grow"><span class="cap">File to send</span><input id="sfile" type="file"></div>
+      <div class="field"><span class="cap">Data frames / s</span><input id="numFps" type="number" min="1" max="30" value="10"></div>
+      <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="5"></div>
+      <div class="field"><span class="cap">&nbsp;</span>
+        <div class="btnrow">
+          <button id="bStart" class="primary" disabled>Start</button>
+          <button id="bHalt" disabled>Stop</button>
+          <button id="bFull" disabled>Fullscreen</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.</div>
   </div>
   <div id="tcWrap"><canvas id="tc" width="128" height="72"></canvas></div>
-  <div class="card stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start. A beacon (logo, then 3-2-1) runs first, so you have time to start the receiver.</div>
-  <div class="dim">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
+  <div class="panel stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start.</div>
+  <div class="hint">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
   Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
 </section>
 
@@ -563,7 +645,7 @@ function resetReceiver() {
   setStatus("Waiting for a code ...");
 }
 function resetLive() {
-  if (live.audio) { try { aud.pause(); } catch (e) {} aud.removeAttribute("src"); aud.load(); }
+  if (live.audio) { live.audio.dispose(); try { aud.pause(); } catch (e) {} aud.removeAttribute("src"); aud.load(); }
   Object.assign(live, { nextG: 0, audio: null, info: null, busy: false, unsupported: false, waitG: -1, waitSince: 0, skipped: 0, ended: false });
 }
 function updateButtons() {
@@ -583,11 +665,17 @@ async function startSource(k) {
   else { vid.srcObject = stream; vid.loop = false; }
   loadQuad();
   try { await vid.play(); } catch (e) {}
-  running = true; updateButtons(); loop();
+  running = true; updateButtons(); markSource(k); loop();
   setStatus(k === "camera" ? "Camera running. Place the corners on the code." : "Capturing. Place the corners on the code.");
   if (stream) stream.getVideoTracks()[0].addEventListener("ended", stopSource);
 }
+function markSource(k) {
+  const ids = { screen: "bScreen", camera: "bCam", file: "bFile" };
+  for (const n of Object.keys(ids)) $(ids[n]).classList.toggle("on", n === k);
+  document.querySelector(".stage").classList.toggle("live", !!k);
+}
 function stopSource() {
+  markSource(null);
   running = false;
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   ex.on = false; ex.phase = "off";
@@ -602,11 +690,11 @@ $("vfile").onchange = async e => {
   stopSource(); srcType = "file"; kind = "screen";
   Object.assign(fp, { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0 });
   Object.assign(ex, { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 });
-  const exact = $("selFileMode").value === "exact" && "requestVideoFrameCallback" in vid;
+  const exact = fileMode() === "exact" && "requestVideoFrameCallback" in vid;
   vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.muted = true; vid.loop = !exact;
   vid.playbackRate = exact ? 1 : (parseFloat($("selSpeed").value) || 1);
   loadQuad();
-  running = true; updateButtons();
+  running = true; updateButtons(); markSource("file");
   ex.on = exact; ex.phase = exact ? "probe" : "off"; ex.sentAt = performance.now();
   try { await vid.play(); } catch (err) {}
   if (!exact) vid.currentTime = 0;
@@ -618,8 +706,15 @@ $("bRestart").onclick = () => {
   if (srcType !== "file" || !running) return;
   if (ex.on && ex.phase === "step") { ex.lastN = -1; ex.lastK = -1; exactSeek(0); } else vid.currentTime = 0;
 };
-$("selFileMode").onchange = () => { store.set("filemode", $("selFileMode").value); };
-{ const v = store.get("filemode", null); if (v) $("selFileMode").value = v; }
+const fileMode = () => document.querySelector('input[name="fmode"]:checked').value;
+function syncFileUi() {
+  $("grpSpeed").hidden = fileMode() !== "play";
+  $("fileHint").textContent = fileMode() === "exact"
+    ? "Video file: Exact steps through every frame, so nothing is missed (speed depends on the browser)."
+    : "Video file: Play runs the file like a live stream and loops until everything has arrived.";
+}
+document.querySelectorAll('input[name="fmode"]').forEach(r => r.onchange = () => { store.set("filemode", fileMode()); syncFileUi(); });
+{ const v = store.get("filemode", null); const el = v && document.querySelector('input[name="fmode"][value="' + v + '"]'); if (el) el.checked = true; syncFileUi(); }
 $("selSpeed").onchange = () => { store.set("speed", $("selSpeed").value); };
 { const v = store.get("speed", null); if (v) $("selSpeed").value = v; }
 $("bReset").onclick = () => { resetReceiver(); };
@@ -835,7 +930,11 @@ function drawPreview(show) {
 
 // ---- live audio (Media Source Extensions)
 class LiveAudio {
-  constructor(el) { this.a = el; this.q = []; this.ready = false; this.ending = false; this.played = false; }
+  constructor(el, preSec) {
+    this.a = el; this.q = []; this.ready = false; this.ending = false;
+    this.pre = preSec; this.started = false; this.rebuffering = false; this.label = "stream";
+    this.timer = setInterval(() => this.check(), 250);
+  }
   async init(mime, seq) {
     this.ms = new MediaSource();
     this.a.src = URL.createObjectURL(this.ms);
@@ -847,6 +946,33 @@ class LiveAudio {
   }
   push(u8) { this.q.push(u8); this.pump(); }
   end() { this.ending = true; this.pump(); }
+  ahead() { const b = this.a.buffered; return b.length ? Math.max(0, b.end(b.length - 1) - this.a.currentTime) : 0; }
+  // Playback starts only after `pre` seconds are buffered; if the buffer runs dry the audio pauses
+  // and resumes once it has refilled, so it does not stutter.
+  check() {
+    if (!this.ready) return;
+    const ahead = this.ahead();
+    if (!this.started) {
+      if (ahead > 0 && (ahead >= this.pre || this.ending)) {
+        this.started = true; this.a.play().catch(() => {});
+        setStatus("Live: playing " + this.label + " while receiving", "ok");
+      } else setStatus("Live: buffering " + ahead.toFixed(1) + " / " + this.pre + " s before playback starts ...", "ok");
+    } else if (this.rebuffering) {
+      if (ahead >= this.pre || this.ending) {
+        this.rebuffering = false; this.a.play().catch(() => {});
+        setStatus("Live: playing " + this.label + " while receiving", "ok");
+      } else setStatus("Live: buffer ran dry, refilling " + ahead.toFixed(1) + " / " + this.pre + " s ...", "ok");
+    } else if (this.pre > 0 && !this.ending && !this.a.paused && ahead < 0.4) {
+      this.a.pause(); this.rebuffering = true;
+    }
+  }
+  statusText() {
+    const ahead = this.ahead().toFixed(1);
+    if (!this.started) return "pre-buffering " + ahead + " / " + this.pre + " s";
+    if (this.rebuffering) return "buffer ran dry, refilling " + ahead + " / " + this.pre + " s";
+    return "audio buffered " + ahead + " s";
+  }
+  dispose() { clearInterval(this.timer); }
   pump() {
     if (!this.ready || this.sb.updating) return;
     if (this.q.length) {
@@ -855,12 +981,13 @@ class LiveAudio {
         if (e.name === "QuotaExceededError") { try { this.sb.remove(0, Math.max(0, this.a.currentTime - 10)); } catch (e2) {} }
         return;
       }
-      if (!this.played) { this.played = true; this.a.play().catch(() => {}); }
     } else if (this.ending && this.ms.readyState === "open") {
       try { this.ms.endOfStream(); } catch (e) {}
     }
+    this.check();
   }
 }
+const preSec = () => clamp(parseFloat($("numPre").value) || 0, 0, 120);
 async function liveTick() {
   if (mode() !== "live" || !asm || !asm.N || live.busy || live.unsupported || live.ended) return;
   live.busy = true;
@@ -885,9 +1012,8 @@ async function liveTick() {
         const info = sniff(chunk);
         const mime = info.live && window.MediaSource ? info.live.find(m => MediaSource.isTypeSupported(m)) : null;
         if (!mime) { live.unsupported = true; setStatus("This file type (" + info.ext + ") cannot be played live. It will be saved, and played after the transfer if it is audio."); break; }
-        live.info = info; live.audio = new LiveAudio(aud);
+        live.info = info; live.audio = new LiveAudio(aud, preSec()); live.audio.label = info.ext.toUpperCase();
         await live.audio.init(mime, info.seq);
-        setStatus("Live: playing " + info.ext.toUpperCase() + " while receiving", "ok");
       }
       if (!live.audio) break;
       live.audio.push(chunk);
@@ -935,22 +1061,28 @@ setInterval(() => {
   const have = asm.frames.size, need = asm.N ? asm.G * fmt.K : 0, ready = asm.readyGroups();
   const prog = asm.N ? ready / asm.G : 0;
   $("barG").style.width = (prog * 100).toFixed(1) + "%";
-  let buf = "";
-  if (live.audio && aud.buffered.length) buf = "<br>audio buffered: " + Math.max(0, aud.buffered.end(aud.buffered.length - 1) - aud.currentTime).toFixed(1) + " s" + (live.skipped ? " &middot; skipped groups: " + live.skipped : "");
-  $("stats").innerHTML =
-    "scans/s: <b>" + rateScan + "</b> &nbsp; valid/s: <b class='" + (rateOk ? "ok" : "") + "'>" + rateOk + "</b><br>" +
-    "frames: <b>" + have + "</b> / " + (asm.N || "?") + (need ? " (need " + need + " in the right groups)" : "") + "<br>" +
-    "groups ready: <b>" + ready + "</b> / " + (asm.G || "?") + buf +
-    (running && srcType === "file" ? (ex.on && ex.phase === "step"
-      ? "<br>file: exact, frame <b>" + ex.k + "</b> / " + ex.total + ", step " + ex.lastStep + ", " + ex.h.toFixed(1) + " video frames per data frame, pass " + (ex.pass + 1)
-      : ex.on ? "<br>file: measuring frame rate ..."
-      : "<br>file: playing at <b>" + vid.playbackRate.toFixed(2) + "x</b>, pass " + (fp.passes + 1)) : "");
+  const extra = [];
+  if (live.audio) extra.push(live.audio.statusText() + (live.skipped ? " &middot; skipped groups " + live.skipped : ""));
+  if (running && srcType === "file") extra.push(ex.on && ex.phase === "step"
+    ? "file: exact stepping, frame " + ex.k + " / " + ex.total + ", step " + ex.lastStep + ", " + ex.h.toFixed(1) + " video frames per data frame, pass " + (ex.pass + 1)
+    : ex.on ? "file: measuring the frame rate ..." : "file: playing at " + vid.playbackRate.toFixed(2) + "x, pass " + (fp.passes + 1));
+  const tile = (k, v, sub, cls) => '<div class="tile"><div class="k">' + k + '</div><div class="v ' + (cls || "") + '">' + v + '</div><div class="s">' + (sub || "") + "</div></div>";
+  const of = x => ' <span class="dim" style="font-size:13px;font-weight:400">/ ' + x + "</span>";
+  $("stats").innerHTML = '<div class="tiles">' +
+    tile("Scans / s", rateScan, "frames looked at") +
+    tile("Valid / s", rateOk, "decoded without error", rateOk ? "ok" : "") +
+    tile("Frames", have + of(asm.N || "?"), need ? "need " + need + " in the right groups" : "") +
+    tile("Groups ready", ready + of(asm.G || "?"), asm.N ? Math.round(prog * 100) + " %" : "") +
+    "</div>" + (extra.length ? '<div class="infoline">' + extra.join("<br>") + "</div>" : "");
   if (running && asm.N && !completed && mode() === "live") liveTick();
 }, 1000);
 
 $("selGrid").onchange = $("numK").onchange = $("numM").onchange = applyFormat;
-document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { store.set("mode", mode()); if (mode() === "live") liveTick(); });
-{ const m = store.get("mode", "live"); const el = document.querySelector('input[name="mode"][value="' + m + '"]'); if (el) el.checked = true; }
+const syncModeUi = () => { $("grpPre").hidden = mode() !== "live"; };
+document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { store.set("mode", mode()); syncModeUi(); if (mode() === "live") liveTick(); });
+$("numPre").onchange = () => { store.set("pre", $("numPre").value); };
+{ const v = store.get("pre", null); if (v !== null) $("numPre").value = v; }
+{ const m = store.get("mode", "live"); const el = document.querySelector('input[name="mode"][value="' + m + '"]'); if (el) el.checked = true; syncModeUi(); }
 
 // =========================================================== SEND
 const tc = $("tc"), tctx = tc.getContext("2d");
