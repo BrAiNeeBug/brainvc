@@ -1,4 +1,4 @@
-*Note: for large files use the windows runtime and ffmpeg also the runtime have no scanner (not possible with 1 core performace)
+Note: for large files use the windows runtime also the runtime have no scanner (not possible with 1 core performace)
 
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
