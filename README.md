@@ -1,6 +1,4 @@
-*Note: for large files use the windows runtime and ffmpeg
-also the WebVersion is much more performant when decoding the runtime is more an gadged but good for encoding stuff..
-only the WebVersion can decode files the runtime is only for testing live en_de-coding and FILE-ENCODING for large files!
+*Note: for large files use the windows runtime and ffmpeg also the runtime have no scanner (not possible with 1 core performace)
 
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
