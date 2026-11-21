@@ -1,4 +1,4 @@
-Note: for large files use the windows runtime (the runtime have no live scanner not possible with 1 core)
+Note: for large files use the windows runtime (the runtime have no live scanner*)
 
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
@@ -40,3 +40,6 @@ The software is provided without any express or implied warranty. The author acc
 **By using BrAiNVC, you acknowledge and accept these limitations and usage restrictions.**
 
 If you represent a company, military organization, government agency, or other institution and wish to use BrAiNVC, please contact the project author for prior authorization.
+
+
+*you can test the runtime live-scanner in the v2 version found in the old folder!
