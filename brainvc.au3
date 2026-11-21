@@ -1,24 +1,19 @@
-; BrAiNVC - optical data channel, step 4 (settings menu, settings are stored in brainvc.ini)
-; Usage:  brainvc.au3                      = settings menu (start the modes from there)
-;         brainvc.au3 enc | scan | export  = start a mode directly with the saved settings
-;   enc     = live encoder (shows frames in a window)
-;   scan    = scanner (drag the red frame over the encoder window / video player)
-;   export  = write frames.raw + make_video.bat (ffmpeg builds the video)
-; Scanner keys: PgUp/PgDn = resize frame +/-10px, numpad +/- = +/-1px, Home = save partial, End = quit
+; BrAiNVC - optical data link, file tool
+;   ENCODE: any file -> video (frames with header, CRC16 and Reed-Solomon parity, optional beacon, built with ffmpeg)
+;   DECODE: video -> the original file (ffmpeg shrinks every video frame to one pixel per cell, then the frames are read)
+; The live scanner lives in the web version (brainvc.html); this script only works with files.
 ;
-; Error correction: frames are sent in groups of FEC_K data frames + FEC_M parity frames
-; (Reed-Solomon over GF(256), Cauchy matrix). ANY FEC_K frames out of a group of FEC_S
-; are enough to rebuild the whole group, so up to FEC_M lost frames per group are fixed.
-#include <GDIPlus.au3>
-#include <ScreenCapture.au3>
-#include <WinAPI.au3>
+; Usage:  brainvc.au3              = menu
+;         brainvc.au3 enc | dec    = start the encoder / decoder directly with the saved settings (brainvc.ini)
+; Needs ffmpeg.exe next to this script (or in PATH) to build and to read videos.
+#NoTrayIcon
+#include <AutoItConstants.au3>
 #include <GUIConstantsEx.au3>
 #include <WindowsConstants.au3>
+#include <StaticConstants.au3>
 #include <ComboConstants.au3>
 #include <EditConstants.au3>
 #include <Math.au3>
-
-DllCall("user32.dll", "bool", "SetProcessDPIAware")
 
 Global Const $INI = @ScriptDir & "\brainvc.ini"
 Global Const $SEC = "brainvc"
@@ -33,9 +28,8 @@ Global $NCELLS = $COLS * $ROWS             ; e.g. 9216 cells = 9216 bits
 Global $NBYTES = Int($NCELLS / 8)          ; e.g. 1152 bytes per frame
 Global $HDR = 10                           ; n(2) N(2) fileLen(4) crc(2)
 Global $PAY = $NBYTES - $HDR               ; payload bytes per frame
-Global $BORDER = 6
 
-; ---- error correction (encoder and scanner must use the same values) --
+; ---- error correction (encoder and decoder must use the same values) --
 Global $FEC_K = Int(_Cfg("FecK", 8))       ; data frames per group
 Global $FEC_M = Int(_Cfg("FecM", 2))       ; parity frames per group
 If $FEC_K < 1 Or $FEC_M < 1 Or $FEC_K + $FEC_M > 255 Then
@@ -44,40 +38,41 @@ If $FEC_K < 1 Or $FEC_M < 1 Or $FEC_K + $FEC_M > 255 Then
 EndIf
 Global $FEC_S = $FEC_K + $FEC_M
 
-; ---- tuning: live encoder / scanner ---------------------------------
-Global $CELL = Int(_Cfg("Cell", 8))                      ; live encoder cell px
-Global $HOLD_MS = Int(_Cfg("HoldMs", 150))               ; live encoder: time per frame
-Global $SHUFFLE = (Int(_Cfg("Shuffle", 0)) = 1)          ; True = random frame order per pass
-Global $JITTER_PCT = Int(_Cfg("JitterPct", 0))           ; live encoder: random extra hold 0..x%
-Global $SAMPLES = Int(_Cfg("Samples", 1))                ; scanner samples per cell: 1 (fast), 3, 5 (robust)
-If $SAMPLES <> 1 And $SAMPLES <> 3 And $SAMPLES <> 5 Then $SAMPLES = 1
-Global $g_iW = Int(_Cfg("ScanWidth", 1024)), $g_iH = Round($g_iW * $ROWS / $COLS)   ; scanner frame size in px
-Global $g_hGUI, $g_aBorder[4]
-Global $g_oDict, $g_iN = 0, $g_iLen = 0
-Global $SCAN_MAX_FPS = Int(_Cfg("ScanMaxFps", 0))        ; scanner: limit scans per second (0 = as fast as possible)
-Global $g_iNibThr = Int(_Cfg("Thr", 8))                  ; scanner: brightness threshold in 16ths (8 = middle)
-If $g_iNibThr < 1 Or $g_iNibThr > 15 Then $g_iNibThr = 8
-Global $g_hScrDC, $g_hMemDC, $g_hDib, $g_pBits, $g_tSmall, $g_tFrame
-Global $g_aBin4[16], $g_aHex1[16], $g_sDark, $g_sBright
-
-; ---- tuning: video export -------------------------------------------
+; ---- encode settings ---------------------------------------------------
 Global $EXPORT_CELL = Int(1920 / $COLS)                  ; video upscale per cell (1920 px wide video)
 Global $EXPORT_VFPS = Int(_Cfg("VideoFps", 60))          ; video frame rate
 Global $EXPORT_DATA_FPS = Number(_Cfg("DataFps", 10))    ; data frames per second
 Global $EXPORT_PASSES = Int(_Cfg("Passes", 2))           ; how many times the whole file is repeated in the video
-Global $BEACON_SEC = Int(_Cfg("BeaconSec", 5))           ; logo + 3-2-1 before the data (live encoder and export), 0 = off
+Global $BEACON_SEC = Int(_Cfg("BeaconSec", 5))           ; logo + 3-2-1 before the data, 0 = off
 If $BEACON_SEC < 0 Or $BEACON_SEC > 30 Then $BEACON_SEC = 5
+If $EXPORT_VFPS <> 30 And $EXPORT_VFPS <> 60 Then $EXPORT_VFPS = 60
+If $EXPORT_DATA_FPS < 1 Then $EXPORT_DATA_FPS = 1
 If $EXPORT_DATA_FPS > $EXPORT_VFPS / 2 Then $EXPORT_DATA_FPS = $EXPORT_VFPS / 2
+If $EXPORT_PASSES < 1 Then $EXPORT_PASSES = 1
+Global $RUN_FFMPEG = (Int(_Cfg("RunFfmpeg", 1)) = 1)     ; build the video right after writing the frames
+Global $OPEN_FOLDER = (Int(_Cfg("OpenFolder", 1)) = 1)   ; open the output folder when done
 
-; ---- tables ---------------------------------------------------------
+; ---- decode settings ---------------------------------------------------
+Global $g_iNibThr = Int(_Cfg("Thr", 8))                  ; brightness threshold in 16ths (8 = middle)
+If $g_iNibThr < 1 Or $g_iNibThr > 15 Then $g_iNibThr = 8
+Global $READ_FPS = Number(_Cfg("ReadFps", 0))            ; frames per second to read from the video, 0 = every frame
+If $READ_FPS < 0 Then $READ_FPS = 0
+Global $g_oDict, $g_iN = 0, $g_iLen = 0
+Global $g_tFrame, $g_aBin4[16], $g_aHex1[16], $g_sDark, $g_sBright
+
+; ---- tables --------------------------------------------------------------
 Global $g_aCrcTab[256]
 Global $g_aExp[512], $g_aLog[256]
 Global $g_aCoef[$FEC_M][$FEC_K]
 Global $g_aMT[$FEC_M * $FEC_K][256]        ; multiplication tables for the Cauchy coefficients
 Global $g_iGrpCache = -1, $g_aParity[$FEC_M][$PAY]
 
-; ---- settings menu controls -----------------------------------------
-Global $mGrid, $mK, $mM, $mCell, $mHold, $mJit, $mShuf, $mSamp, $mWidth, $mRate, $mThr, $mVfps, $mDfps, $mPass, $mBeacon, $mInfo
+; ---- menu colors / controls ----------------------------------------------
+Global Const $C_BG = 0x0E1014, $C_FIELD = 0x1D222B, $C_LINE = 0x2A303B, $C_TXT = 0xE8EAEE, $C_DIM = 0x8B94A3
+Global Const $C_ACC = 0x4CC2FF, $C_ACC_HOT = 0x7AD3FF, $C_BTN = 0x2A3140, $C_BTN_HOT = 0x3A4458, $C_OK = 0x4CD98A, $C_BAD = 0xFF6B6B
+Global $mGrid, $mK, $mM, $mVfps, $mDfps, $mPass, $mBeacon, $mRun, $mOpen, $mThr, $mRead, $mInfo
+Global $g_aBtnId[8], $g_aBtnBase[8], $g_aBtnHot[8], $g_iBtnN = 0, $g_iHot = 0
+Global $g_hPG = 0, $g_idPgTitle, $g_idPgStat, $g_idPgFill, $g_idPgCancel, $g_bPgCancel = False   ; progress window
 
 Global $g_sMode = ""
 If $CmdLine[0] > 0 Then $g_sMode = $CmdLine[1]
@@ -86,12 +81,14 @@ _InitCrc()
 _InitFec()
 Switch $g_sMode
 	Case "enc"
-		_Encoder()
-	Case "export"
-		_Export()
-	Case Else
-		_Scanner()
+		_Encode()
+	Case "dec"
+		_Decode()
 EndSwitch
+If $CmdLine[0] > 1 Then
+	If $CmdLine[2] = "menu" Then _Relaunch("")       ; started from the menu: go back to it
+EndIf
+Exit
 
 ; =====================================================================
 ; CRC16 (table driven)
@@ -291,97 +288,9 @@ Func _MakeFrame(ByRef $bData, $n, $iN, $iLen, ByRef $aF)
 	$aF[9] = BitAND($iCrc, 0xFF)
 EndFunc   ;==>_MakeFrame
 
-; draw frame bytes into a GDI+ graphics context (black cell = 1), horizontal runs merged into one rect
-Func _DrawFrame($hCtx, ByRef $aF, $iCell, $hBrush)
-	Local $r, $cx, $i, $bit, $iRun
-	_GDIPlus_GraphicsClear($hCtx, 0xFFFFFFFF)
-	For $r = 0 To $ROWS - 1
-		$iRun = -1
-		For $cx = 0 To $COLS - 1
-			$i = $r * $COLS + $cx
-			$bit = BitAND(BitShift($aF[Int($i / 8)], 7 - Mod($i, 8)), 1)
-			If $bit Then
-				If $iRun < 0 Then $iRun = $cx
-			ElseIf $iRun >= 0 Then
-				_GDIPlus_GraphicsFillRect($hCtx, $iRun * $iCell, $r * $iCell, ($cx - $iRun) * $iCell, $iCell, $hBrush)
-				$iRun = -1
-			EndIf
-		Next
-		If $iRun >= 0 Then _GDIPlus_GraphicsFillRect($hCtx, $iRun * $iCell, $r * $iCell, ($COLS - $iRun) * $iCell, $iCell, $hBrush)
-	Next
-EndFunc   ;==>_DrawFrame
-
-; =====================================================================
-; live encoder
-; =====================================================================
-Func _Encoder()
-	Local $sFile = FileOpenDialog("File to transmit", @ScriptDir, "All (*.*)")
-	If @error Then Exit
-	Local $bData = _ReadFile($sFile)
-	Local $iLen = BinaryLen($bData)
-	Local $iN = _FrameCount($iLen)
-	If Not _SizeOk($iN) Then Exit
-
-	_GDIPlus_Startup()
-	Local $iW = $COLS * $CELL, $iH = $ROWS * $CELL
-	Local $hGUI = GUICreate("BrAiNVC Encoder", $iW, $iH)
-	GUISetBkColor(0xFFFFFF)
-	GUISetState(@SW_SHOW)
-
-	; off-screen GDI bitmap, copied to the window with ONE BitBlt
-	Local $hDC = _WinAPI_GetDC($hGUI)
-	Local $hMemDC = _WinAPI_CreateCompatibleDC($hDC)
-	Local $hBmp = _WinAPI_CreateCompatibleBitmap($hDC, $iW, $iH)
-	_WinAPI_SelectObject($hMemDC, $hBmp)
-	Local $hCtx = _GDIPlus_GraphicsCreateFromHDC($hMemDC)
-	Local $hBlack = _GDIPlus_BrushCreateSolid(0xFF000000)
-
-	Local $aOrder[$iN], $iPos = 0, $i
-	For $i = 0 To $iN - 1
-		$aOrder[$i] = $i
-	Next
-
-	Local $aF[$NBYTES], $f, $hT, $iPass = 0, $iHold
-	If $BEACON_SEC > 0 Then
-		Local $aS[4] = ["BrAiNVC", "3", "2", "1"], $aT[4] = [$BEACON_SEC * 1000, 1000, 1000, 1000], $iB
-		For $iB = 0 To 3
-			_RenderBeacon($aS[$iB], $aF)
-			_DrawFrame($hCtx, $aF, $CELL, $hBlack)
-			_WinAPI_BitBlt($hDC, 0, 0, $iW, $iH, $hMemDC, 0, 0, 0x00CC0020)   ; SRCCOPY
-			WinSetTitle($hGUI, "", "BrAiNVC Encoder  beacon " & $aS[$iB])
-			$hT = TimerInit()
-			While TimerDiff($hT) < $aT[$iB]
-				If GUIGetMsg() = $GUI_EVENT_CLOSE Then Exit
-				Sleep(10)
-			WEnd
-		Next
-	EndIf
-	While 1
-		$hT = TimerInit()
-		If $iPos = 0 Then
-			If $SHUFFLE Then _Shuffle($aOrder)
-			$iPass += 1
-		EndIf
-		$iHold = $HOLD_MS + Random(0, $HOLD_MS * $JITTER_PCT / 100, 1)
-		$f = $aOrder[$iPos]
-
-		_MakeFrame($bData, $f, $iN, $iLen, $aF)
-		_DrawFrame($hCtx, $aF, $CELL, $hBlack)
-		_WinAPI_BitBlt($hDC, 0, 0, $iW, $iH, $hMemDC, 0, 0, 0x00CC0020)   ; SRCCOPY
-		WinSetTitle($hGUI, "", "BrAiNVC Encoder  pass " & $iPass & ":  " & ($iPos + 1) & " / " & $iN & "   (frame " & $f & (Mod($f, $FEC_S) >= $FEC_K ? ", parity)" : ")"))
-
-		While TimerDiff($hT) < $iHold
-			If GUIGetMsg() = $GUI_EVENT_CLOSE Then Exit
-			Sleep(2)
-		WEnd
-		If GUIGetMsg() = $GUI_EVENT_CLOSE Then Exit
-		$iPos = Mod($iPos + 1, $iN)
-	WEnd
-EndFunc   ;==>_Encoder
-
 ; =====================================================================
 ; beacon: logo and 3-2-1 countdown in a 5x7 pixel font inside a 1-cell border ring
-; (same layout as the web version, so either side recognises the other's beacon)
+; (same layout as the web version, which shows how well it is aligned while the beacon runs)
 ; =====================================================================
 Func _Glyph($c)
 	Switch $c
@@ -444,7 +353,7 @@ Func _RenderBeacon($sText, ByRef $aF)
 	Next
 EndFunc   ;==>_RenderBeacon
 
-; export: write the beacon picture for $fSec seconds into frames.raw, returns the number of video frames
+; write the beacon picture for $fSec seconds into frames.raw, returns the number of video frames
 Func _WriteBeacon($hRaw, $sText, $fSec)
 	Local $aF[$NBYTES], $tF = DllStructCreate("byte[" & $NBYTES & "]"), $i
 	_RenderBeacon($sText, $aF)
@@ -458,34 +367,32 @@ Func _WriteBeacon($hRaw, $sText, $fSec)
 	Return $iCount
 EndFunc   ;==>_WriteBeacon
 
-Func _Shuffle(ByRef $a)
-	Local $j, $t
-	For $i = UBound($a) - 1 To 1 Step -1
-		$j = Random(0, $i, 1)
-		$t = $a[$i]
-		$a[$i] = $a[$j]
-		$a[$j] = $t
-	Next
-EndFunc   ;==>_Shuffle
-
 ; =====================================================================
-; video export (raw 1-bit frames, each repeated a few video frames, ffmpeg batch file)
+; ENCODE: file -> frames.raw -> video
 ; =====================================================================
-Func _Export()
-	Local $sFile = FileOpenDialog("File to transmit", @ScriptDir, "All (*.*)")
-	If @error Then Exit
-	Local $sDir = FileSelectFolder("Output folder (frames.raw + make_video.bat)", @ScriptDir)
-	If @error Then Exit
+Func _Encode()
+	Local $sFile = FileOpenDialog("File to encode", @ScriptDir, "All (*.*)")
+	If @error Then Return
+	Local $sBase = StringRegExpReplace($sFile, "^.*\\|\.[^.\\]*$", "")
+	Local $sDir = FileSelectFolder("Output folder for the video", StringRegExpReplace($sFile, "\\[^\\]*$", ""))
+	If @error Then Return
 	Local $bData = _ReadFile($sFile)
 	Local $iLen = BinaryLen($bData)
 	Local $iN = _FrameCount($iLen)
-	If Not _SizeOk($iN) Then Exit
+	If Not _SizeOk($iN) Then Return
+	Local $iOut = $iN * $EXPORT_PASSES
+	Local $fSecs = $iOut / $EXPORT_DATA_FPS
+	If $BEACON_SEC > 0 Then $fSecs += $BEACON_SEC + 3
+	If MsgBox(1 + 64, "BrAiNVC", $iLen & " bytes  ->  " & $iN & " frames (" & Int($iN / $FEC_S) & " groups of " & $FEC_S & ")" & @CRLF & _
+			$EXPORT_PASSES & " pass(es) at " & $EXPORT_DATA_FPS & " data frames/s: the video will be about " & _TimeStr($fSecs) & " long." & @CRLF & @CRLF & "Continue?") <> 1 Then Return
 
-	; 1 bit per cell, MSB first, 128 cells = 16 bytes per row: exactly ffmpeg's "monow" rawvideo layout
-	; every data frame is written 60/10 = 6 video frames long; a non-integer ratio alternates evenly (e.g. 7,8,7,8) so the rhythm stays smooth
+	; 1 bit per cell, MSB first: exactly ffmpeg's "monow" rawvideo layout. Every data frame lasts VFPS/DATA_FPS video frames;
+	; a non-integer ratio alternates evenly (e.g. 7,8,7,8) so the rhythm stays smooth
 	Local $hRaw = FileOpen($sDir & "\frames.raw", 2 + 16)
 	Local $aF[$NBYTES], $tF = DllStructCreate("byte[" & $NBYTES & "]"), $bin
-	Local $i, $k, $n, $iPass, $iRep, $iVid = 0, $iDone = 0, $iOut = $iN * $EXPORT_PASSES
+	Local $i, $k, $n, $iPass, $iRep, $iVid = 0, $iDone = 0, $hT0 = TimerInit()
+	_PgOpen("Encoding")
+	_PgSet(0, "Writing the beacon ...")
 	If $BEACON_SEC > 0 Then   ; logo, then 3-2-1, before the first data frame
 		$iVid += _WriteBeacon($hRaw, "BrAiNVC", $BEACON_SEC)
 		For $k = 3 To 1 Step -1
@@ -505,95 +412,354 @@ Func _Export()
 			Next
 			$iVid += $iRep
 			$iDone += 1
-			If Mod($iDone, 20) = 0 Then ToolTip("Exporting " & $iDone & " / " & $iOut, 0, 0)
+			If Mod($iDone, 10) = 0 Then
+				_PgSet($iDone * 100 / $iOut, "Writing frames   " & $iDone & " / " & $iOut & "   -   " & Int($iDone * 100 / $iOut) & " %" & @CRLF & _TimeStr(TimerDiff($hT0) / 1000) & " elapsed")
+				If _PgPoll() Then
+					FileClose($hRaw)
+					_PgClose()
+					MsgBox(48, "BrAiNVC", "Cancelled.")
+					Return
+				EndIf
+			EndIf
 		Next
 	Next
 	FileClose($hRaw)
-	ToolTip("")
 
-	Local $sFF = @ScriptDir & "\ffmpeg.exe"
-	Local $sBat = "@echo off" & @CRLF & "set FF=ffmpeg" & @CRLF & _
-			"if exist """ & $sFF & """ set FF=""" & $sFF & """" & @CRLF & _
-			"%FF% -y -f rawvideo -pix_fmt monow -video_size " & $COLS & "x" & $ROWS & " -framerate " & $EXPORT_VFPS & _
-			" -i frames.raw -vf ""format=gray,scale=" & ($COLS * $EXPORT_CELL) & ":" & ($ROWS * $EXPORT_CELL) & ":flags=neighbor,format=yuv420p""" & _
-			" -c:v libx264 -preset slow -crf 14 -g " & $EXPORT_VFPS & " brainvc.mp4" & @CRLF & "pause" & @CRLF
+	Local $sFF = _FindFfmpeg()
+	Local $sVideo = $sDir & "\" & $sBase & ".mp4"
+	Local $sVf = "format=gray,scale=" & ($COLS * $EXPORT_CELL) & ":" & ($ROWS * $EXPORT_CELL) & ":flags=neighbor,format=yuv420p"
+	Local $sArgs = ' -y -f rawvideo -pix_fmt monow -video_size ' & $COLS & 'x' & $ROWS & ' -framerate ' & $EXPORT_VFPS & _
+			' -i frames.raw -vf "' & $sVf & '" -c:v libx264 -preset slow -crf 14 -g ' & $EXPORT_VFPS & ' "' & $sVideo & '"'
 	Local $hBat = FileOpen($sDir & "\make_video.bat", 2)
-	FileWrite($hBat, $sBat)
+	FileWrite($hBat, "@echo off" & @CRLF & '"' & ($sFF = "" ? "ffmpeg" : $sFF) & '"' & $sArgs & @CRLF & "pause" & @CRLF)
 	FileClose($hBat)
 
-	MsgBox(64, "BrAiNVC", "Exported " & $iOut & " frames (" & $iN & " x " & $EXPORT_PASSES & " passes, " & ($iN - Int($iN / $FEC_S) * $FEC_M) & " data + parity) to" & @CRLF & $sDir & @CRLF & @CRLF & _
-			"Run make_video.bat there (ffmpeg.exe next to this script, or in PATH) to build brainvc.mp4" & @CRLF & _
-			"Video length: " & Round($iVid / $EXPORT_VFPS / 60, 1) & " min")
-EndFunc   ;==>_Export
+	Local $sMsg = $iOut & " frames written (" & _TimeStr($iVid / $EXPORT_VFPS) & " of video)." & @CRLF
+	Local $bUseFF = ($RUN_FFMPEG And $sFF <> "")
+	If $bUseFF Then
+		; ffmpeg reports its progress through a pipe (frame=...), shown in the window
+		_PgTitle("Building the video with ffmpeg")
+		_PgSet(0, "Starting ffmpeg ...")
+		Local $sArgsP = StringReplace($sArgs, " -y ", " -y -progress pipe:1 -nostats ", 1)
+		Local $iPid = Run('"' & $sFF & '"' & $sArgsP, $sDir, @SW_HIDE, $STDOUT_CHILD)
+		Local $sBuf = "", $sRd, $aM, $iFr = 0, $fPct, $fEl, $hUi = TimerInit(), $bCancel = False
+		$hT0 = TimerInit()
+		While ProcessExists($iPid)
+			$sRd = StdoutRead($iPid)
+			If $sRd <> "" Then
+				$sBuf = StringRight($sBuf & $sRd, 800)
+				$aM = StringRegExp($sBuf, "frame=\s*(\d+)", 3)
+				If IsArray($aM) Then $iFr = Int($aM[UBound($aM) - 1])
+			EndIf
+			If TimerDiff($hUi) > 150 Then
+				$hUi = TimerInit()
+				$fPct = _Min(100, $iFr * 100 / $iVid)
+				$fEl = TimerDiff($hT0) / 1000
+				_PgSet($fPct, "Frame " & $iFr & " / " & $iVid & "   -   " & Int($fPct) & " %" & @CRLF & _TimeStr($fEl) & " elapsed" & ($fPct > 2 ? ",  about " & _TimeStr($fEl * (100 - $fPct) / $fPct) & " left" : ""))
+			EndIf
+			If _PgPoll() Then
+				$bCancel = True
+				ProcessClose($iPid)
+				ExitLoop
+			EndIf
+			Sleep(50)
+		WEnd
+		_PgClose()
+		If $bCancel Then
+			Sleep(300)
+			FileDelete($sVideo)
+			MsgBox(48, "BrAiNVC", "Cancelled. The frames (frames.raw) and make_video.bat are still in the output folder.")
+			Return
+		EndIf
+		If FileExists($sVideo) And FileGetSize($sVideo) > 0 Then
+			$sMsg &= @CRLF & "Video: " & $sVideo & @CRLF & "(" & Round(FileGetSize($sVideo) / 1048576, 1) & " MB)"
+		Else
+			$sMsg &= @CRLF & "ffmpeg did not create the video. Run make_video.bat in the output folder to see the error."
+		EndIf
+	Else
+		_PgClose()
+		If $sFF = "" Then
+			$sMsg &= @CRLF & "ffmpeg.exe was not found (next to this script or in PATH)." & @CRLF & "Put it there and run make_video.bat in the output folder."
+		Else
+			$sMsg &= @CRLF & "Run make_video.bat in the output folder to build the video."
+		EndIf
+	EndIf
+	MsgBox(64, "BrAiNVC - encode finished", $sMsg)
+	If $OPEN_FOLDER Then ShellExecute($sDir)
+EndFunc   ;==>_Encode
+
+Func _TimeStr($fSec)
+	Local $s = Int($fSec)
+	Return StringFormat("%d:%02d", Int($s / 60), Mod($s, 60))
+EndFunc   ;==>_TimeStr
+
+; full path of ffmpeg.exe next to the script, "ffmpeg" when it is in PATH, "" when it cannot be found
+Func _FindFfmpeg()
+	If FileExists(@ScriptDir & "\ffmpeg.exe") Then Return @ScriptDir & "\ffmpeg.exe"
+	If RunWait(@ComSpec & ' /c where ffmpeg >nul 2>&1', @ScriptDir, @SW_HIDE) = 0 Then Return "ffmpeg"
+	Return ""
+EndFunc   ;==>_FindFfmpeg
 
 ; =====================================================================
-; scanner
+; DECODE: video -> frames -> file
 ; =====================================================================
-Func _Scanner()
-	$g_hGUI = GUICreate("", 100, 100, 100, 100, $WS_POPUP, BitOR($WS_EX_LAYERED, $WS_EX_TOPMOST))
-	GUISetBkColor(0x010203)
-	For $i = 0 To 3
-		$g_aBorder[$i] = GUICtrlCreateLabel("", 0, 0, 10, 10, -1, $GUI_WS_EX_PARENTDRAG)
-		GUICtrlSetBkColor($g_aBorder[$i], 0xFF0000)
-	Next
-	GUISetState(@SW_SHOW)
-	_WinAPI_SetLayeredWindowAttributes($g_hGUI, 0x010203, 255, 1)   ; color key = transparent hole
-	_Relayout()
-	HotKeySet("{PGUP}", "_Bigger")
-	HotKeySet("{PGDN}", "_Smaller")
-	HotKeySet("{NUMPADADD}", "_BiggerFine")
-	HotKeySet("{NUMPADSUB}", "_SmallerFine")
-	HotKeySet("{END}", "_Quit")
-	HotKeySet("{HOME}", "_SavePartial")
-	_InitScan()
+Func _Decode()
+	Local $sVid = FileOpenDialog("Video to decode", @ScriptDir, "Video (*.mp4;*.mkv;*.webm;*.mov;*.avi;*.m4v)|All (*.*)")
+	If @error Then Return
+	Local $sFF = _FindFfmpeg()
+	If $sFF = "" Then
+		MsgBox(48, "BrAiNVC", "ffmpeg.exe was not found." & @CRLF & "Put it next to this script (or into PATH) - it is needed to read the video.")
+		Return
+	EndIf
 
-	$g_oDict = ObjCreate("Scripting.Dictionary")
-	Local $sFrame, $aPos, $n, $iN, $aRes
-	Local $iScan = 0, $iOk = 0, $hRate = TimerInit(), $sRate = "", $hChk = TimerInit(), $hTip = TimerInit(), $hLoop
-	Local $iMinMs = ($SCAN_MAX_FPS > 0) ? Int(1000 / $SCAN_MAX_FPS) : 0
-	While 1
-		$hLoop = TimerInit()
-		GUIGetMsg()
-		$aPos = WinGetPos($g_hGUI)
-		$iScan += 1
-		If _GrabFast($sFrame, $aPos[0] + $BORDER, $aPos[1] + $BORDER) Then
-			$n = Dec(StringMid($sFrame, 1, 4))
-			$iN = Dec(StringMid($sFrame, 5, 4))
-			$iOk += 1
-			If Not $g_oDict.Exists($n) Then $g_oDict.Item($n) = StringMid($sFrame, $HDR * 2 + 1, $PAY * 2)
-			$g_iN = $iN
-			$g_iLen = Dec(StringMid($sFrame, 9, 8))
-		EndIf
-		If TimerDiff($hRate) >= 1000 Then
-			$sRate = $iScan & " scans/s, " & $iOk & " ok/s"
-			$iScan = 0
-			$iOk = 0
-			$hRate = TimerInit()
-		EndIf
-		If TimerDiff($hTip) >= 250 Then
-			$hTip = TimerInit()
-			ToolTip("frames " & $g_oDict.Count & "/" & ($g_iN > 0 ? $g_iN & "  (need " & Int($g_iN / $FEC_S) * $FEC_K & " in the right groups)" : "?") & "   " & $g_iW & "x" & $g_iH & "px (cell " & Round($g_iW / $COLS, 1) & ")   " & $sRate & "   [Home = save partial]", $aPos[0], _Max($aPos[1] - 24, 0))
-		EndIf
-
-		If $g_iN > 0 And TimerDiff($hChk) >= 1000 Then
-			$hChk = TimerInit()
-			If _AllGroupsOk() Then
-				ToolTip("Recovering ...", $aPos[0], _Max($aPos[1] - 24, 0))
-				$aRes = _Recover(False)
-				ToolTip("")
-				MsgBox(64, "BrAiNVC", "Done. Saved " & $aRes[0] & @CRLF & $g_iLen & " bytes, " & $aRes[1] & " frames rebuilt by error correction")
-				Exit
+	; 1) ffmpeg shrinks every video frame to COLS x ROWS gray pixels (box average = exactly one value per cell)
+	_PgOpen("Extracting the frames with ffmpeg")
+	_PgSet(0, "Reading the video ...")
+	Local $fDur = _VideoDuration($sFF, $sVid)
+	Local $sTmp = @TempDir & "\brainvc_frames.raw"
+	FileDelete($sTmp)
+	Local $sVf = ($READ_FPS > 0 ? "fps=" & $READ_FPS & "," : "") & "scale=" & $COLS & ":" & $ROWS & ":flags=area,format=gray"
+	Local $sSync = ($READ_FPS > 0 ? "" : " -vsync 0")      ; keep every video frame exactly once (no duplicated or dropped frames)
+	Local $iPid = Run('"' & $sFF & '" -y -v error -progress pipe:1 -nostats -i "' & $sVid & '" -an -sn' & $sSync & ' -vf "' & $sVf & '" -f rawvideo -pix_fmt gray "' & $sTmp & '"', @ScriptDir, @SW_HIDE, $STDOUT_CHILD)
+	Local $sBuf = "", $sRd, $aM, $fSec = 0, $fPct, $fEl, $hUi = TimerInit(), $hT0 = TimerInit(), $bCancel = False, $iU = 0
+	While ProcessExists($iPid)
+		$sRd = StdoutRead($iPid)
+		If $sRd <> "" Then
+			$sBuf = StringRight($sBuf & $sRd, 800)
+			$aM = StringRegExp($sBuf, "out_time=(\d+):(\d+):(\d+(?:\.\d+)?)", 3)
+			If IsArray($aM) Then
+				$iU = UBound($aM)
+				$fSec = Int($aM[$iU - 3]) * 3600 + Int($aM[$iU - 2]) * 60 + Number($aM[$iU - 1])
 			EndIf
 		EndIf
-		If $iMinMs > 0 Then
-			While TimerDiff($hLoop) < $iMinMs
-				Sleep(1)
-			WEnd
-		Else
-			Sleep(1)
+		If TimerDiff($hUi) > 150 Then
+			$hUi = TimerInit()
+			$fEl = TimerDiff($hT0) / 1000
+			If $fDur > 0 Then
+				$fPct = _Min(100, $fSec * 100 / $fDur)
+				_PgSet($fPct, "Video time " & _TimeStr($fSec) & " / " & _TimeStr($fDur) & "   -   " & Int($fPct) & " %" & @CRLF & _TimeStr($fEl) & " elapsed" & ($fPct > 2 ? ",  about " & _TimeStr($fEl * (100 - $fPct) / $fPct) & " left" : ""))
+			Else
+				_PgSet(0, "Extracted " & Round(FileGetSize($sTmp) / 1048576) & " MB" & @CRLF & _TimeStr($fEl) & " elapsed")
+			EndIf
+		EndIf
+		If _PgPoll() Then
+			$bCancel = True
+			ProcessClose($iPid)
+			ExitLoop
+		EndIf
+		Sleep(50)
+	WEnd
+	If $bCancel Then
+		_PgClose()
+		Sleep(300)
+		FileDelete($sTmp)
+		MsgBox(48, "BrAiNVC", "Cancelled.")
+		Return
+	EndIf
+	Local $iFS = $COLS * $ROWS, $iFrames = Int(FileGetSize($sTmp) / $iFS)
+	If $iFrames < 1 Then
+		_PgClose()
+		FileDelete($sTmp)
+		MsgBox(48, "BrAiNVC", "ffmpeg could not read frames from this video.")
+		Return
+	EndIf
+
+	; 2) read the frames: every new valid data frame is stored, repeats of a frame are skipped almost for free
+	_PgTitle("Reading the frames")
+	_InitDecode()
+	$g_oDict = ObjCreate("Scripting.Dictionary")
+	$g_iN = 0
+	$g_iLen = 0
+	Local $hRaw = FileOpen($sTmp, 16)
+	Local $bin, $iRes, $iNew = 0, $iDup = 0, $iOther = 0, $iSeen = 0
+	$hUi = TimerInit()
+	$hT0 = TimerInit()
+	While 1
+		$bin = FileRead($hRaw, $iFS)
+		If BinaryLen($bin) < $iFS Then ExitLoop
+		$iSeen += 1
+		$iRes = _GrayFrame($bin)
+		Switch $iRes
+			Case 1
+				$iNew += 1
+			Case 2
+				$iDup += 1
+			Case Else
+				$iOther += 1
+		EndSwitch
+		If TimerDiff($hUi) > 200 Then
+			$hUi = TimerInit()
+			$fPct = $iSeen * 100 / $iFrames
+			_PgSet($fPct, "Video frame " & $iSeen & " / " & $iFrames & "   -   " & Int($fPct) & " %" & @CRLF & "data frames found: " & $iNew & ($g_iN > 0 ? " of " & $g_iN : "") & "   -   " & _TimeStr(TimerDiff($hT0) / 1000) & " elapsed")
+			If _PgPoll() Then
+				FileClose($hRaw)
+				FileDelete($sTmp)
+				_PgClose()
+				MsgBox(48, "BrAiNVC", "Cancelled.")
+				Return
+			EndIf
+			If $g_iN > 0 And _AllGroupsOk() Then ExitLoop      ; everything needed is there
 		EndIf
 	WEnd
-EndFunc   ;==>_Scanner
+	FileClose($hRaw)
+	FileDelete($sTmp)
+	_PgClose()
+	If $g_iN = 0 Then
+		MsgBox(48, "BrAiNVC", "No data frames found in " & $iSeen & " video frames." & @CRLF & @CRLF & _
+				"Check that grid, K and M match the encoder, and that this is a video made by BrAiNVC (not a screen recording of it).")
+		Return
+	EndIf
+
+	; 3) rebuild lost frames with the parity frames and write the file
+	Local $aRes = _Recover()
+	Local $sOut = $aRes[0], $iFixed = $aRes[1], $iLost = $aRes[2]
+	Local $sExt = _SniffExt(StringLeft($sOut, 160))
+	Local $sFileOut = StringRegExpReplace($sVid, "\.[^.\\]*$", "") & ".decoded" & ($iLost > 0 ? ".partial" : "") & "." & $sExt
+	Local $hOut = FileOpen($sFileOut, 2 + 16)
+	If $sOut <> "" Then FileWrite($hOut, Binary("0x" & $sOut))
+	FileClose($hOut)
+
+	Local $sMsg = ($iLost = 0 ? "Complete." : "Incomplete: " & $iLost & " data frame(s) are missing (zero-filled).") & @CRLF & @CRLF & _
+			$sFileOut & @CRLF & $g_iLen & " bytes (" & $sExt & ")" & @CRLF & @CRLF & _
+			$iSeen & " video frames read, " & $iNew & " data frames found, " & $iDup & " repeats skipped, " & $iOther & " not usable" & @CRLF & _
+			$iFixed & " frames rebuilt by error correction"
+	MsgBox(($iLost = 0 ? 64 : 48), "BrAiNVC - decode finished", $sMsg)
+	If $OPEN_FOLDER Then ShellExecute(StringRegExpReplace($sFileOut, "\\[^\\]*$", ""))
+EndFunc   ;==>_Decode
+
+; length of a video in seconds (asks ffmpeg, 0 when unknown)
+Func _VideoDuration($sFF, $sVid)
+	Local $iPid = Run('"' & $sFF & '" -hide_banner -i "' & $sVid & '"', @ScriptDir, @SW_HIDE, $STDERR_CHILD)
+	Local $sErr = "", $s
+	While 1
+		$s = StderrRead($iPid)
+		If @error Then ExitLoop
+		$sErr &= $s
+		Sleep(10)
+	WEnd
+	Local $a = StringRegExp($sErr, "Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", 3)
+	If Not IsArray($a) Then Return 0
+	Return Int($a[0]) * 3600 + Int($a[1]) * 60 + Number($a[2])
+EndFunc   ;==>_VideoDuration
+
+; =====================================================================
+; progress window (same look as the menu; Cancel button / closing the window = cancel)
+; =====================================================================
+Func _PgOpen($sTitle)
+	$g_hPG = GUICreate("BrAiNVC", 480, 166, -1, -1, BitOR($WS_CAPTION, $WS_SYSMENU))
+	GUISetBkColor($C_BG, $g_hPG)
+	GUISetFont(9, 400, 0, "Segoe UI")
+	$g_idPgTitle = _T($sTitle, 24, 14, 432, 26, $C_ACC)
+	GUICtrlSetFont($g_idPgTitle, 13, 700, 0, "Segoe UI")
+	$g_idPgStat = _T("", 24, 50, 432, 40, $C_DIM)
+	Local $id = GUICtrlCreateLabel("", 24, 100, 432, 10)           ; bar track
+	GUICtrlSetBkColor($id, $C_FIELD)
+	$g_idPgFill = GUICtrlCreateLabel("", 24, 100, 1, 10)           ; bar fill
+	GUICtrlSetBkColor($g_idPgFill, $C_ACC)
+	$g_idPgCancel = _Btn("Cancel", 356, 122, 100, 28, $C_BTN, $C_BTN_HOT, $C_TXT)
+	$g_bPgCancel = False
+	GUISetState(@SW_SHOW, $g_hPG)
+EndFunc   ;==>_PgOpen
+
+Func _PgTitle($sTitle)
+	GUICtrlSetData($g_idPgTitle, $sTitle)
+EndFunc   ;==>_PgTitle
+
+Func _PgSet($fPct, $sStatus)
+	If $fPct < 0 Then $fPct = 0
+	If $fPct > 100 Then $fPct = 100
+	GUICtrlSetPos($g_idPgFill, 24, 100, _Max(1, Int(432 * $fPct / 100)), 10)
+	GUICtrlSetData($g_idPgStat, $sStatus)
+EndFunc   ;==>_PgSet
+
+; keeps the window alive; True once the user asked to cancel
+Func _PgPoll()
+	Local $iMsg = GUIGetMsg()
+	If $iMsg = $GUI_EVENT_CLOSE Or $iMsg = $g_idPgCancel Then $g_bPgCancel = True
+	_Hover($g_hPG)
+	Return $g_bPgCancel
+EndFunc   ;==>_PgPoll
+
+Func _PgClose()
+	If $g_hPG Then GUIDelete($g_hPG)
+	$g_hPG = 0
+EndFunc   ;==>_PgClose
+
+; one-time tables for the string based frame reader
+Func _InitDecode()
+	$g_tFrame = DllStructCreate("byte[" & $NBYTES & "]")
+	For $v = 0 To 15
+		$g_aBin4[$v] = BitAND(BitShift($v, 3), 1) & BitAND(BitShift($v, 2), 1) & BitAND(BitShift($v, 1), 1) & BitAND($v, 1) & ","
+		$g_aHex1[$v] = Hex($v, 1)
+	Next
+	Local $sSet = "0123456789ABCDEF"
+	$g_sDark = "[" & StringLeft($sSet, $g_iNibThr) & "]"
+	$g_sBright = "[" & StringMid($sSet, $g_iNibThr + 1) & "]"
+EndFunc   ;==>_InitDecode
+
+; string of brightness nibbles (one hex char per cell) -> hex string of the packed bits (dark cell = 1)
+Func _NibblesToHex($s)
+	$s = StringRegExpReplace($s, $g_sDark, "1")
+	$s = StringRegExpReplace($s, $g_sBright, "0")
+	$s = StringRegExpReplace($s, "(....)", "\1,")                 ; 4 bits per token
+	For $v = 0 To 15
+		$s = StringReplace($s, $g_aBin4[$v], $g_aHex1[$v])        ; token -> one hex digit
+	Next
+	Return $s
+EndFunc   ;==>_NibblesToHex
+
+; $bin = COLS*ROWS gray bytes of one video frame.
+; Returns 1 = new valid data frame stored, 2 = frame already known, 0 = not a usable data frame
+Func _GrayFrame(ByRef $bin)
+	; header from the first row only (cheap), so repeated frames cost almost nothing
+	Local $s = StringRegExpReplace(Hex(BinaryMid($bin, 1, $COLS)), "(.).", "\1")      ; high nibble of every gray byte
+	Local $sH = _NibblesToHex($s)
+	Local $n = Dec(StringMid($sH, 1, 4)), $iN = Dec(StringMid($sH, 5, 4))
+	If $iN = 0 Or $n >= $iN Or Mod($iN, $FEC_S) <> 0 Then Return 0
+	If IsObj($g_oDict) And $g_oDict.Exists($n) Then Return 2
+
+	$s = StringRegExpReplace(Hex($bin), "(.).", "\1")
+	Local $sFrame = _NibblesToHex($s)
+	If StringLen($sFrame) <> $NBYTES * 2 Then Return 0
+	DllStructSetData($g_tFrame, 1, Binary("0x" & $sFrame))
+	Local $iCrc = 0xFFFF, $i
+	For $i = 1 To 8
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
+	Next
+	For $i = $HDR + 1 To $NBYTES
+		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
+	Next
+	If $iCrc <> DllStructGetData($g_tFrame, 1, 9) * 256 + DllStructGetData($g_tFrame, 1, 10) Then Return 0
+	$g_oDict.Item($n) = StringMid($sFrame, $HDR * 2 + 1, $PAY * 2)
+	$g_iN = $iN
+	$g_iLen = Dec(StringMid($sFrame, 9, 8))
+	Return 1
+EndFunc   ;==>_GrayFrame
+
+; guess the file type from the first bytes (hex string) for the output name
+Func _SniffExt($sHex)
+	If StringLeft($sHex, 6) = "494433" Then Return "mp3"
+	If StringLeft($sHex, 2) = "FF" And BitAND(Dec(StringMid($sHex, 3, 2)), 0xE0) = 0xE0 Then Return "mp3"
+	If StringLeft($sHex, 8) = "1A45DFA3" Then Return "webm"
+	If StringLeft($sHex, 8) = "4F676753" Then Return "ogg"
+	If StringLeft($sHex, 8) = "52494646" And StringMid($sHex, 17, 8) = "57415645" Then Return "wav"
+	If StringLeft($sHex, 8) = "664C6143" Then Return "flac"
+	If StringMid($sHex, 9, 8) = "66747970" Then Return "m4a"
+	If StringLeft($sHex, 8) = "89504E47" Then Return "png"
+	If StringLeft($sHex, 6) = "FFD8FF" Then Return "jpg"
+	If StringLeft($sHex, 8) = "47494638" Then Return "gif"
+	If StringLeft($sHex, 8) = "25504446" Then Return "pdf"
+	If StringLeft($sHex, 8) = "504B0304" Then Return "zip"
+	Local $c, $i, $bText = (StringLen($sHex) >= 8)
+	For $i = 0 To Int(StringLen($sHex) / 2) - 1
+		$c = Dec(StringMid($sHex, $i * 2 + 1, 2))
+		If $c < 9 Or ($c > 13 And $c < 32) Or $c > 126 Then
+			$bText = False
+			ExitLoop
+		EndIf
+	Next
+	Return $bText ? "txt" : "bin"
+EndFunc   ;==>_SniffExt
 
 ; true when every group has at least FEC_K of its FEC_S frames
 Func _AllGroupsOk()
@@ -617,7 +783,7 @@ Func _HexToRow($sHex, ByRef $a, $row)
 	Next
 EndFunc   ;==>_HexToRow
 
-; rebuild the $d missing data frames of group starting at transmission index $n0
+; rebuild the $d missing data frames of the group starting at transmission index $n0
 ; returns array of hex strings (in the order of $aMiss) or 0
 Func _RecoverGroup($n0, ByRef $aMiss, $d, ByRef $aParAv)
 	Local $r, $c, $i, $j, $b, $v, $u, $s
@@ -669,9 +835,9 @@ Func _RecoverGroup($n0, ByRef $aMiss, $d, ByRef $aParAv)
 	Return $aHex
 EndFunc   ;==>_RecoverGroup
 
-; assemble the file from what we have; fix lost data frames via parity where possible;
-; frames that cannot be rebuilt are zero filled. Returns [file name, rebuilt frames, lost frames]
-Func _Recover($bPartial)
+; assemble the file from what we have; lost data frames are rebuilt via parity where possible,
+; frames that cannot be rebuilt are zero filled. Returns [file as hex, rebuilt frames, lost frames]
+Func _Recover()
 	Local $iG = Int($g_iN / $FEC_S), $g, $i, $j, $m, $n0, $iMiss, $iPar, $aHex
 	Local $aMiss[$FEC_K], $aParAv[$FEC_M]
 	Local $sZero = "", $sOut = "", $iLost = 0, $iFixed = 0
@@ -716,128 +882,13 @@ Func _Recover($bPartial)
 		Next
 	Next
 	$sOut = StringLeft($sOut, $g_iLen * 2)
-	Local $sName = @ScriptDir & ($bPartial ? "\received_partial.bin" : "\received.bin")
-	Local $hOut = FileOpen($sName, 2 + 16)
-	If $sOut <> "" Then FileWrite($hOut, Binary("0x" & $sOut))
-	FileClose($hOut)
-	Local $aRes[3] = [$sName, $iFixed, $iLost]
+	Local $aRes[3] = [$sOut, $iFixed, $iLost]
 	Return $aRes
 EndFunc   ;==>_Recover
-
-; Home key: write what we have so far (error correction applied, unrecoverable gaps zero filled)
-Func _SavePartial()
-	If Not IsObj($g_oDict) Or $g_oDict.Count = 0 Or $g_iN = 0 Then Return
-	ToolTip("Recovering ...", 0, 0)
-	Local $aRes = _Recover(True)
-	ToolTip("")
-	MsgBox(64, "BrAiNVC", "Saved " & $aRes[0] & @CRLF & $aRes[1] & " frames rebuilt by error correction, " & $aRes[2] & " data frames still missing (zero-filled)")
-EndFunc   ;==>_SavePartial
-
-Func _Relayout()
-	$g_iH = Round($g_iW * $ROWS / $COLS)
-	Local $w = $g_iW, $h = $g_iH, $b = $BORDER
-	Local $aPos = WinGetPos($g_hGUI)
-	WinMove($g_hGUI, "", $aPos[0], $aPos[1], $w + 2 * $b, $h + 2 * $b)
-	GUICtrlSetPos($g_aBorder[0], 0, 0, $w + 2 * $b, $b)
-	GUICtrlSetPos($g_aBorder[1], 0, $h + $b, $w + 2 * $b, $b)
-	GUICtrlSetPos($g_aBorder[2], 0, $b, $b, $h)
-	GUICtrlSetPos($g_aBorder[3], $w + $b, $b, $b, $h)
-EndFunc   ;==>_Relayout
-
-Func _Grow($iDelta)
-	$g_iW = _Max(_Min($g_iW + $iDelta, 3000), 256)
-	_Relayout()
-EndFunc   ;==>_Grow
-
-Func _Bigger()
-	_Grow(10)
-EndFunc   ;==>_Bigger
-
-Func _Smaller()
-	_Grow(-10)
-EndFunc   ;==>_Smaller
-
-Func _BiggerFine()
-	_Grow(1)
-EndFunc   ;==>_BiggerFine
-
-Func _SmallerFine()
-	_Grow(-1)
-EndFunc   ;==>_SmallerFine
-
-Func _Quit()
-	Exit
-EndFunc   ;==>_Quit
-
-; one-time setup for the fast scanner: a COLS x ROWS 32-bit DIB that the screen region is shrunk into by GDI
-Func _InitScan()
-	Local $tBMI = DllStructCreate("struct;dword Size;long Width;long Height;ushort Planes;ushort BitCount;dword Compression;dword SizeImage;long XPels;long YPels;dword ClrUsed;dword ClrImportant;endstruct")
-	DllStructSetData($tBMI, "Size", DllStructGetSize($tBMI))
-	DllStructSetData($tBMI, "Width", $COLS)
-	DllStructSetData($tBMI, "Height", -$ROWS)      ; negative = top-down rows
-	DllStructSetData($tBMI, "Planes", 1)
-	DllStructSetData($tBMI, "BitCount", 32)
-	DllStructSetData($tBMI, "Compression", 0)
-	$g_hScrDC = _WinAPI_GetDC(0)
-	$g_hMemDC = _WinAPI_CreateCompatibleDC($g_hScrDC)
-	Local $aR = DllCall("gdi32.dll", "handle", "CreateDIBSection", "handle", $g_hScrDC, "struct*", $tBMI, "uint", 0, "ptr*", 0, "handle", 0, "dword", 0)
-	$g_hDib = $aR[0]
-	$g_pBits = $aR[4]
-	_WinAPI_SelectObject($g_hMemDC, $g_hDib)
-	; 1 sample = nearest pixel (fastest), 3 / 5 = HALFTONE (averages the whole cell, more robust)
-	DllCall("gdi32.dll", "int", "SetStretchBltMode", "handle", $g_hMemDC, "int", ($SAMPLES = 1) ? 3 : 4)
-	DllCall("gdi32.dll", "bool", "SetBrushOrgEx", "handle", $g_hMemDC, "int", 0, "int", 0, "ptr", 0)
-	$g_tSmall = DllStructCreate("byte[" & $COLS * $ROWS * 4 & "]", $g_pBits)
-	$g_tFrame = DllStructCreate("byte[" & $NBYTES & "]")
-	For $v = 0 To 15
-		$g_aBin4[$v] = BitAND(BitShift($v, 3), 1) & BitAND(BitShift($v, 2), 1) & BitAND(BitShift($v, 1), 1) & BitAND($v, 1) & ","
-		$g_aHex1[$v] = Hex($v, 1)
-	Next
-	Local $sSet = "0123456789ABCDEF"
-	$g_sDark = "[" & StringLeft($sSet, $g_iNibThr) & "]"
-	$g_sBright = "[" & StringMid($sSet, $g_iNibThr + 1) & "]"
-EndFunc   ;==>_InitScan
-
-; Read one frame from the screen. GDI shrinks the region to one pixel per cell (native), then the
-; whole frame is turned into bytes with string operations instead of a loop over every cell.
-; Returns the frame as hex string (header + payload) when the CRC is fine.
-Func _GrabFast(ByRef $sFrame, $x, $y)
-	Local $r = DllCall("gdi32.dll", "bool", "StretchBlt", "handle", $g_hMemDC, "int", 0, "int", 0, "int", $COLS, "int", $ROWS, _
-			"handle", $g_hScrDC, "int", $x, "int", $y, "int", $g_iW, "int", $g_iH, "dword", 0x00CC0020)
-	If @error Or Not $r[0] Then Return False
-	DllCall("gdi32.dll", "bool", "GdiFlush")
-
-	Local $s = Hex(DllStructGetData($g_tSmall, 1))                ; BBGGRRAA per pixel, 8 hex chars
-	$s = StringRegExpReplace($s, "..(.).{5}", "\1")               ; keep the high nibble of green -> 1 char per cell
-	$s = StringRegExpReplace($s, $g_sDark, "1")                   ; dark cell = bit 1
-	$s = StringRegExpReplace($s, $g_sBright, "0")
-	$s = StringRegExpReplace($s, "(....)", "\1,")                 ; 4 bits per token
-	For $v = 0 To 15
-		$s = StringReplace($s, $g_aBin4[$v], $g_aHex1[$v])        ; token -> one hex digit
-	Next
-	If StringLen($s) <> $NBYTES * 2 Then Return False
-
-	; cheap header check first, so torn / empty frames do not cost a CRC run
-	Local $n = Dec(StringMid($s, 1, 4)), $iN = Dec(StringMid($s, 5, 4))
-	If $iN = 0 Or $n >= $iN Or Mod($iN, $FEC_S) <> 0 Then Return False
-
-	DllStructSetData($g_tFrame, 1, Binary("0x" & $s))
-	Local $iCrc = 0xFFFF, $i
-	For $i = 1 To 8
-		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
-	Next
-	For $i = $HDR + 1 To $NBYTES
-		$iCrc = BitXOR(BitAND(BitShift($iCrc, -8), 0xFFFF), $g_aCrcTab[BitAND(BitXOR(BitShift($iCrc, 8), DllStructGetData($g_tFrame, 1, $i)), 0xFF)])
-	Next
-	If $iCrc <> DllStructGetData($g_tFrame, 1, 9) * 256 + DllStructGetData($g_tFrame, 1, 10) Then Return False
-	$sFrame = $s
-	Return True
-EndFunc   ;==>_GrabFast
 
 ; =====================================================================
 ; settings menu (writes brainvc.ini, then starts the chosen mode in a fresh process)
 ; =====================================================================
-
 Func _Cfg($sKey, $vDef)
 	Return IniRead($INI, $SEC, $sKey, $vDef)
 EndFunc   ;==>_Cfg
@@ -855,82 +906,127 @@ Func _SetCombo($id, $sList, $sSel)
 	GUICtrlSetData($id, $sList, $sSel)
 EndFunc   ;==>_SetCombo
 
-Func _Menu()
-	GUICreate("BrAiNVC - settings", 450, 666)
-	GUISetFont(9, 400, 0, "Segoe UI")
-	Local $y
+; text label (transparent background by default)
+Func _T($sText, $x, $y, $w, $h, $iCol = 0xE8EAEE, $iBk = -2, $iStyle = -1)
+	Local $id = GUICtrlCreateLabel($sText, $x, $y, $w, $h, $iStyle)
+	GUICtrlSetColor($id, $iCol)
+	GUICtrlSetBkColor($id, $iBk)
+	Return $id
+EndFunc   ;==>_T
 
-	$y = 10
-	GUICtrlCreateGroup("Frame format - encoder and scanner must match", 10, $y, 430, 112)
-	GUICtrlCreateLabel("Grid (cells)", 25, $y + 26, 160, 18)
-	$mGrid = GUICtrlCreateCombo("", 190, $y + 22, 110, 22, $CBS_DROPDOWNLIST)
+; flat button made of a label (colors can be set freely, hover handled in the message loop)
+Func _Btn($sText, $x, $y, $w, $h, $iBase, $iHot, $iFg)
+	Local $id = GUICtrlCreateLabel($sText, $x, $y, $w, $h, BitOR($SS_CENTER, $SS_CENTERIMAGE, $SS_NOTIFY))
+	GUICtrlSetColor($id, $iFg)
+	GUICtrlSetBkColor($id, $iBase)
+	GUICtrlSetFont($id, 10, 700, 0, "Segoe UI")
+	GUICtrlSetCursor($id, 0)
+	$g_aBtnId[$g_iBtnN] = $id
+	$g_aBtnBase[$g_iBtnN] = $iBase
+	$g_aBtnHot[$g_iBtnN] = $iHot
+	$g_iBtnN += 1
+	Return $id
+EndFunc   ;==>_Btn
+
+Func _Section($sTitle, $y)
+	Local $id = _T($sTitle, 24, $y, 532, 16, $C_DIM)
+	GUICtrlSetFont($id, 8, 700, 0, "Segoe UI")
+	$id = GUICtrlCreateLabel("", 24, $y + 19, 532, 1)
+	GUICtrlSetBkColor($id, $C_LINE)
+EndFunc   ;==>_Section
+
+Func _Field($id)
+	GUICtrlSetBkColor($id, $C_FIELD)
+	GUICtrlSetColor($id, $C_TXT)
+	Return $id
+EndFunc   ;==>_Field
+
+Func _Hover($hGui)
+	Local $a = GUIGetCursorInfo($hGui), $iId = 0, $i
+	If IsArray($a) Then $iId = $a[4]
+	If $iId = $g_iHot Then Return
+	For $i = 0 To $g_iBtnN - 1
+		If $g_aBtnId[$i] = $g_iHot Then GUICtrlSetBkColor($g_aBtnId[$i], $g_aBtnBase[$i])
+		If $g_aBtnId[$i] = $iId Then GUICtrlSetBkColor($g_aBtnId[$i], $g_aBtnHot[$i])
+	Next
+	$g_iHot = $iId
+EndFunc   ;==>_Hover
+
+Func _Toggle($id)
+	If BitAND(GUICtrlRead($id), $GUI_CHECKED) Then
+		GUICtrlSetState($id, $GUI_UNCHECKED)
+	Else
+		GUICtrlSetState($id, $GUI_CHECKED)
+	EndIf
+EndFunc   ;==>_Toggle
+
+Func _Menu()
+	Local $hM = GUICreate("BrAiNVC", 580, 582)
+	GUISetBkColor($C_BG)
+	GUISetFont(9, 400, 0, "Segoe UI")
+	Local $id
+
+	$id = _T("BrAiNVC", 24, 12, 300, 36, $C_ACC)
+	GUICtrlSetFont($id, 22, 800, 0, "Segoe UI")
+	_T("optical data link  -  file encoder / decoder", 26, 50, 520, 18, $C_DIM)
+	Local $bEnc = _Btn("ENCODE      file  ->  video", 24, 82, 256, 54, $C_ACC, $C_ACC_HOT, 0x04202E)
+	Local $bDec = _Btn("DECODE      video  ->  file", 300, 82, 256, 54, $C_ACC, $C_ACC_HOT, 0x04202E)
+
+	_Section("FRAME FORMAT   (encoder and decoder must use the same values)", 156)
+	_T("Grid (cells)", 24, 186, 150, 16, $C_DIM)
+	$mGrid = _Field(GUICtrlCreateCombo("", 24, 204, 130, 22, $CBS_DROPDOWNLIST))
 	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", $COLS & "x" & $ROWS)
 	GUICtrlSetTip($mGrid, "More cells = more data per frame, but smaller cells are harder to read after video compression.")
-	GUICtrlCreateLabel("Data frames per group (K)", 25, $y + 52, 160, 18)
-	$mK = GUICtrlCreateInput($FEC_K, 190, $y + 48, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mK, "Larger K = less overhead, but a longer wait until a group can be rebuilt.")
-	GUICtrlCreateLabel("Parity frames per group (M)", 25, $y + 78, 160, 18)
-	$mM = GUICtrlCreateInput($FEC_M, 190, $y + 74, 60, 22, $ES_NUMBER)
+	_T("Data frames per group (K)", 190, 186, 170, 16, $C_DIM)
+	$mK = _Field(GUICtrlCreateInput($FEC_K, 190, 204, 80, 22, $ES_NUMBER))
+	GUICtrlSetTip($mK, "Larger K = less overhead, but a group needs more frames before it can be rebuilt.")
+	_T("Parity frames per group (M)", 360, 186, 190, 16, $C_DIM)
+	$mM = _Field(GUICtrlCreateInput($FEC_M, 360, 204, 80, 22, $ES_NUMBER))
 	GUICtrlSetTip($mM, "Up to M lost frames per group of K+M are rebuilt. Overhead = M / (K+M).")
-	GUICtrlCreateGroup("", -99, -99, 1, 1)
 
-	$y = 132
-	GUICtrlCreateGroup("Live encoder", 10, $y, 430, 128)
-	GUICtrlCreateLabel("Cell size (px)", 25, $y + 26, 160, 18)
-	$mCell = GUICtrlCreateInput($CELL, 190, $y + 22, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mCell, "Window size = grid x cell size (4-16)")
-	GUICtrlCreateLabel("Hold per frame (ms)", 25, $y + 52, 160, 18)
-	$mHold = GUICtrlCreateInput($HOLD_MS, 190, $y + 48, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mHold, "Keep this above the scanner's scan period (1000 / scans per second).")
-	GUICtrlCreateLabel("Random extra hold (%)", 25, $y + 78, 160, 18)
-	$mJit = GUICtrlCreateInput($JITTER_PCT, 190, $y + 74, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mJit, "Only needed if the scanner is slower than the frame rate (breaks the rhythm lock).")
-	$mShuf = GUICtrlCreateCheckbox("Shuffle frame order each pass", 25, $y + 100, 260, 20)
-	If $SHUFFLE Then GUICtrlSetState($mShuf, $GUI_CHECKED)
-	GUICtrlCreateGroup("", -99, -99, 1, 1)
-
-	$y = 270
-	GUICtrlCreateGroup("Scanner", 10, $y, 430, 132)
-	GUICtrlCreateLabel("Samples per cell", 25, $y + 26, 160, 18)
-	$mSamp = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
-	_SetCombo($mSamp, "1|3|5", $SAMPLES)
-	GUICtrlSetTip($mSamp, "1 = nearest pixel per cell (fastest). 3 or 5 = average over the whole cell, more robust for blurry / compressed video.")
-	GUICtrlCreateLabel("Start width (px)", 25, $y + 52, 160, 18)
-	$mWidth = GUICtrlCreateInput($g_iW, 190, $y + 48, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mWidth, "Width of the red frame at start (256-3000). Resize it later with PgUp/PgDn and numpad +/-.")
-	GUICtrlCreateLabel("Max scans per second", 25, $y + 78, 160, 18)
-	$mRate = GUICtrlCreateInput($SCAN_MAX_FPS, 190, $y + 74, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mRate, "0 = as fast as possible. A limit lowers CPU load.")
-	GUICtrlCreateLabel("Brightness threshold (1-15)", 25, $y + 104, 160, 18)
-	$mThr = GUICtrlCreateInput($g_iNibThr, 190, $y + 100, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mThr, "Cells darker than this (in 16ths of full brightness) count as black. 8 = middle. Change it if the picture is very dark or washed out.")
-	GUICtrlCreateGroup("", -99, -99, 1, 1)
-
-	$y = 412
-	GUICtrlCreateGroup("Video export", 10, $y, 430, 134)
-	GUICtrlCreateLabel("Video frame rate (fps)", 25, $y + 26, 160, 18)
-	$mVfps = GUICtrlCreateCombo("", 190, $y + 22, 60, 22, $CBS_DROPDOWNLIST)
+	_Section("ENCODE   (file -> video)", 250)
+	_T("Video frame rate", 24, 280, 130, 16, $C_DIM)
+	$mVfps = _Field(GUICtrlCreateCombo("", 24, 298, 100, 22, $CBS_DROPDOWNLIST))
 	_SetCombo($mVfps, "30|60", $EXPORT_VFPS)
-	$mDfps = GUICtrlCreateInput($EXPORT_DATA_FPS, 190, $y + 48, 60, 22, $ES_NUMBER)
-	GUICtrlCreateLabel("Data frames per second", 25, $y + 52, 160, 18)
-	GUICtrlSetTip($mDfps, "Keep it clearly below the scanner's scans/s. Max = video fps / 2.")
-	GUICtrlCreateLabel("Repeats of the whole file", 25, $y + 78, 160, 18)
-	$mPass = GUICtrlCreateInput($EXPORT_PASSES, 190, $y + 74, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mPass, "More repeats = lost frames get another chance (1-5).")
-	GUICtrlCreateLabel("Beacon before data (s)", 25, $y + 104, 160, 18)
-	$mBeacon = GUICtrlCreateInput($BEACON_SEC, 190, $y + 100, 60, 22, $ES_NUMBER)
-	GUICtrlSetTip($mBeacon, "Logo, then a 3-2-1 countdown before the data starts (0 = off). Gives you time to start the video and align the scanner. Used by the live encoder and the export.")
-	GUICtrlCreateGroup("", -99, -99, 1, 1)
+	_T("Data frames / s", 160, 280, 120, 16, $C_DIM)
+	$mDfps = _Field(GUICtrlCreateInput($EXPORT_DATA_FPS, 160, 298, 80, 22, $ES_NUMBER))
+	GUICtrlSetTip($mDfps, "Maximum = video fps / 2. For a screen scanner stay clearly below its scans per second; for decoding a file any value works.")
+	_T("File repeats", 290, 280, 100, 16, $C_DIM)
+	$mPass = _Field(GUICtrlCreateInput($EXPORT_PASSES, 290, 298, 70, 22, $ES_NUMBER))
+	GUICtrlSetTip($mPass, "Repeat the whole file in the video (1-5), so lost frames get another chance.")
+	_T("Beacon (s, 0 = off)", 400, 280, 150, 16, $C_DIM)
+	$mBeacon = _Field(GUICtrlCreateInput($BEACON_SEC, 400, 298, 70, 22, $ES_NUMBER))
+	GUICtrlSetTip($mBeacon, "Logo, then a 3-2-1 countdown before the data starts (0 = off).")
+	$mRun = GUICtrlCreateCheckbox("", 24, 336, 18, 18)
+	If $RUN_FFMPEG Then GUICtrlSetState($mRun, $GUI_CHECKED)
+	Local $lRun = _T("Build the video with ffmpeg right away", 46, 337, 260, 18, $C_TXT, -2, $SS_NOTIFY)
+	GUICtrlSetCursor($lRun, 0)
+	$mOpen = GUICtrlCreateCheckbox("", 330, 336, 18, 18)
+	If $OPEN_FOLDER Then GUICtrlSetState($mOpen, $GUI_CHECKED)
+	Local $lOpen = _T("Open the folder when done", 352, 337, 200, 18, $C_TXT, -2, $SS_NOTIFY)
+	GUICtrlSetCursor($lOpen, 0)
 
-	$mInfo = GUICtrlCreateLabel("", 15, 554, 420, 62)
+	_Section("DECODE   (video -> file)", 372)
+	_T("Brightness threshold (1-15)", 24, 402, 180, 16, $C_DIM)
+	$mThr = _Field(GUICtrlCreateInput($g_iNibThr, 24, 420, 80, 22, $ES_NUMBER))
+	GUICtrlSetTip($mThr, "Cells darker than this (in 16ths of full brightness) count as black. 8 = middle.")
+	_T("Frames/s to read (0 = every video frame)", 190, 402, 280, 16, $C_DIM)
+	$mRead = _Field(GUICtrlCreateInput($READ_FPS, 190, 420, 80, 22, $ES_NUMBER))
+	GUICtrlSetTip($mRead, "0 reads every frame of the video (safest). A lower value skips frames and is faster, but may miss short frames.")
 
-	Local $bEnc = GUICtrlCreateButton("Live encoder", 10, 624, 100, 32)
-	Local $bScan = GUICtrlCreateButton("Scanner", 115, 624, 100, 32)
-	Local $bExp = GUICtrlCreateButton("Export video", 220, 624, 100, 32)
-	Local $bDef = GUICtrlCreateButton("Defaults", 325, 624, 115, 32)
+	$mInfo = _T("", 24, 464, 532, 58, $C_DIM)
+	Local $sFf = _FindFfmpeg()
+	If $sFf = "" Then
+		_T("ffmpeg: NOT FOUND - put ffmpeg.exe next to this script", 24, 540, 400, 18, $C_BAD)
+	ElseIf $sFf = "ffmpeg" Then
+		_T("ffmpeg: found in PATH", 24, 540, 400, 18, $C_OK)
+	Else
+		_T("ffmpeg: found next to the script", 24, 540, 400, 18, $C_OK)
+	EndIf
+	Local $bDef = _Btn("Defaults", 440, 534, 116, 28, $C_BTN, $C_BTN_HOT, $C_TXT)
 	GUISetState(@SW_SHOW)
 
-	Local $iMsg, $hT = TimerInit()
+	Local $iMsg, $hTm = TimerInit()
 	_MenuInfo()
 	While 1
 		$iMsg = GUIGetMsg()
@@ -939,16 +1035,19 @@ Func _Menu()
 				Exit
 			Case $bEnc
 				_MenuStart("enc")
-			Case $bScan
-				_MenuStart("scan")
-			Case $bExp
-				_MenuStart("export")
+			Case $bDec
+				_MenuStart("dec")
 			Case $bDef
 				_MenuDefaults()
+			Case $lRun
+				_Toggle($mRun)
+			Case $lOpen
+				_Toggle($mOpen)
 		EndSwitch
-		If TimerDiff($hT) > 250 Then
+		_Hover($hM)
+		If TimerDiff($hTm) > 300 Then
 			_MenuInfo()
-			$hT = TimerInit()
+			$hTm = TimerInit()
 		EndIf
 	WEnd
 EndFunc   ;==>_Menu
@@ -959,12 +1058,12 @@ Func _MenuInfo()
 	If UBound($aG) < 2 Then Return
 	Local $c = Int($aG[0]), $r = Int($aG[1])
 	Local $iPay = Int($c * $r / 8) - 10
-	Local $k = _Num($mK, 1, 64), $m = _Num($mM, 1, 8), $iCell = _Num($mCell, 4, 16)
+	Local $k = _Num($mK, 1, 64), $m = _Num($mM, 1, 8)
 	Local $iV = Int(GUICtrlRead($mVfps)), $fD = _Num($mDfps, 1, Int($iV / 2))
 	Local $iEx = Int(1920 / $c)
 	GUICtrlSetData($mInfo, "Frame: " & Int($c * $r / 8) & " bytes (" & $iPay & " payload), error correction overhead " & Round($m / ($k + $m) * 100) & " %" & @CRLF & _
-			"Throughput at " & $fD & " data frames/s: about " & Round($fD * $iPay * $k / ($k + $m) / 1024, 1) & " kB/s" & @CRLF & _
-			"Export video: " & $c * $iEx & "x" & $r * $iEx & " (cell " & $iEx & " px)   Live window: " & $c * $iCell & "x" & $r * $iCell & " px")
+			"At " & $fD & " data frames/s: about " & Round($fD * $iPay * $k / ($k + $m) / 1024, 1) & " kB/s of payload" & @CRLF & _
+			"Video: " & $c * $iEx & "x" & $r * $iEx & " (cell " & $iEx & " px), " & $iV & " fps")
 EndFunc   ;==>_MenuInfo
 
 Func _MenuSave()
@@ -975,43 +1074,39 @@ Func _MenuSave()
 	EndIf
 	IniWrite($INI, $SEC, "FecK", _Num($mK, 1, 64))
 	IniWrite($INI, $SEC, "FecM", _Num($mM, 1, 8))
-	IniWrite($INI, $SEC, "Cell", _Num($mCell, 4, 16))
-	IniWrite($INI, $SEC, "HoldMs", _Num($mHold, 30, 2000))
-	IniWrite($INI, $SEC, "JitterPct", _Num($mJit, 0, 100))
-	IniWrite($INI, $SEC, "Shuffle", (GUICtrlRead($mShuf) = $GUI_CHECKED) ? 1 : 0)
-	IniWrite($INI, $SEC, "Samples", Int(GUICtrlRead($mSamp)))
-	IniWrite($INI, $SEC, "ScanWidth", _Num($mWidth, 256, 3000))
-	IniWrite($INI, $SEC, "ScanMaxFps", _Num($mRate, 0, 500))
-	IniWrite($INI, $SEC, "Thr", _Num($mThr, 1, 15))
 	Local $iV = Int(GUICtrlRead($mVfps))
 	IniWrite($INI, $SEC, "VideoFps", $iV)
 	IniWrite($INI, $SEC, "DataFps", _Num($mDfps, 1, Int($iV / 2)))
 	IniWrite($INI, $SEC, "Passes", _Num($mPass, 1, 5))
 	IniWrite($INI, $SEC, "BeaconSec", _Num($mBeacon, 0, 30))
+	IniWrite($INI, $SEC, "RunFfmpeg", (GUICtrlRead($mRun) = $GUI_CHECKED) ? 1 : 0)
+	IniWrite($INI, $SEC, "OpenFolder", (GUICtrlRead($mOpen) = $GUI_CHECKED) ? 1 : 0)
+	IniWrite($INI, $SEC, "Thr", _Num($mThr, 1, 15))
+	IniWrite($INI, $SEC, "ReadFps", _Num($mRead, 0, 240))
 EndFunc   ;==>_MenuSave
 
-; save, start the mode as a new process (so every setting, also grid / FEC, takes effect), close the menu
+; save, then run the chosen mode in a new process (so every setting, also grid / FEC, takes effect) and close the menu
 Func _MenuStart($sMode)
 	_MenuSave()
-	Local $sCmd = @Compiled ? '"' & @ScriptFullPath & '"' : '"' & @AutoItExe & '" "' & @ScriptFullPath & '"'
-	Run($sCmd & " " & $sMode, @ScriptDir)
+	_Relaunch($sMode & " menu")
 	Exit
 EndFunc   ;==>_MenuStart
+
+Func _Relaunch($sArgs)
+	Local $sCmd = @Compiled ? '"' & @ScriptFullPath & '"' : '"' & @AutoItExe & '" "' & @ScriptFullPath & '"'
+	Run($sCmd & " " & $sArgs, @ScriptDir)
+EndFunc   ;==>_Relaunch
 
 Func _MenuDefaults()
 	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", "128x72")
 	GUICtrlSetData($mK, 8)
 	GUICtrlSetData($mM, 2)
-	GUICtrlSetData($mCell, 8)
-	GUICtrlSetData($mHold, 150)
-	GUICtrlSetData($mJit, 0)
-	GUICtrlSetState($mShuf, $GUI_UNCHECKED)
-	_SetCombo($mSamp, "1|3|5", "1")
-	GUICtrlSetData($mWidth, 1024)
-	GUICtrlSetData($mRate, 0)
-	GUICtrlSetData($mThr, 8)
 	_SetCombo($mVfps, "30|60", "60")
 	GUICtrlSetData($mDfps, 10)
 	GUICtrlSetData($mPass, 2)
 	GUICtrlSetData($mBeacon, 5)
+	GUICtrlSetState($mRun, $GUI_CHECKED)
+	GUICtrlSetState($mOpen, $GUI_CHECKED)
+	GUICtrlSetData($mThr, 8)
+	GUICtrlSetData($mRead, 0)
 EndFunc   ;==>_MenuDefaults
