@@ -6,8 +6,9 @@ https://braineebug.github.io/brainvc/brainvc.html
 latest test decoding realtime v2.3:
 https://www.youtube.com/watch?v=UmDyXyGJnX0
 
-<img width="1853" height="871" alt="{F3E3DEF7-1A18-4163-8FD9-178869F9EA32}" src="https://github.com/user-attachments/assets/2d3efc96-b3a4-49c3-904a-95ee7031f05e" />
-<img width="582" height="609" alt="image" src="https://github.com/user-attachments/assets/b3e244a1-47ea-4945-a3a5-5f917a1573f3" />
+<img width="815" height="837" alt="{050C7CF4-9B60-48E9-913E-A49EBB7E7293}" src="https://github.com/user-attachments/assets/fb8cce57-5526-4d43-bf21-83102277d831" />
+
+<img width="582" height="633" alt="image" src="https://github.com/user-attachments/assets/95c202e7-46db-494d-b9e9-7a9ec8a8671a" />
 
 
 Please follow the Restrictions! Because it is NOT SAFE and in TESTMODE ! realy...
