@@ -213,6 +213,26 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   </div>
   <div id="tcWrap"><canvas id="tc" width="128" height="72"></canvas></div>
   <div class="panel stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start.</div>
+  <div class="panel" id="vidPanel">
+    <div class="panel-row">
+      <div class="field" style="flex-basis:100%"><b>Create a video file</b>
+        <span class="dim">MP4 (H.264) or WebM, ready for YouTube or for decoding later. Uses the file chosen above and the beacon setting.</span></div>
+      <div class="field"><span class="cap">Video frame rate</span>
+        <select id="selVFps"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
+      <div class="field"><span class="cap">Data frames / s</span><input id="numVData" type="number" min="1" max="30" value="10"></div>
+      <div class="field"><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="2"></div>
+      <div class="field"><span class="cap">Quality</span>
+        <select id="selVBr"><option value="8">Normal (8 Mbit/s)</option><option value="16" selected>High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
+      <div class="field grow"></div>
+      <div class="field"><span class="cap">&nbsp;</span>
+        <div class="btnrow"><button id="bMkVideo" class="primary" disabled>Create video</button><button id="bMkCancel" disabled>Cancel</button></div></div>
+    </div>
+    <div class="bar"><i id="barV"></i></div>
+    <div id="vStatus" class="dim">Choose a file above, then press Create video.</div>
+    <div class="btnrow" style="margin-top:10px"><button id="bVDl" class="primary" disabled>Download video</button></div>
+    <div class="hint">Frames are encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Data frames/s: at most half of the video frame rate.
+    Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
+  </div>
   <div class="hint">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
   Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
 </section>
@@ -223,7 +243,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <h2>BrAiNVC &middot; optical data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
-    This web edition does the live work; <code>brainvc.au3</code> / <code>brainvc.exe</code> is the file tool for encoding and decoding with ffmpeg.
+    This web edition does the live work and can also create video files; <code>brainvc.au3</code> / <code>brainvc.exe</code> is the file tool for encoding and decoding with ffmpeg.
     Both use the same frame format.</p>
     <div class="btnrow">
       <a class="linkbtn" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub: BrAiNeeBug/brainvc</a>
@@ -255,7 +275,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <div class="panel">
     <h2>Settings</h2>
     <p class="dim" style="margin-bottom:12px">Everything you set on this page is remembered in this browser. Reset brings back the defaults, which are the same as in <code>brainvc.au3</code>:
-    grid 160&times;90, K = 8, M = 2, 10 data frames/s, 5 s beacon (plus: 10 s pre-buffer, Live play, Exact file reading).</p>
+    grid 160&times;90, K = 8, M = 2, 10 data frames/s, 5 s beacon, 60 fps video, 2 file repeats (plus: 10 s pre-buffer, Live play, Exact file reading).</p>
     <button id="bResetAll2" class="danger">Reset all settings to defaults</button>
   </div>
 </section>
@@ -634,6 +654,107 @@ function beaconMatch(fmt, lum, thr, tpl) {
     }
   }
   return best;
+}
+
+// ------------------------------------------------------------ video muxers
+// Small container writers for the output of a WebCodecs VideoEncoder: MP4 (H.264) and WebM (VP8/VP9).
+// samples = [{ data: Uint8Array, ts: timestamp in microseconds, key: boolean }] in decode order, no frame reordering.
+const _u8 = x => x instanceof Uint8Array ? x : Uint8Array.from(x);
+function _cat(parts) {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+const _be32 = n => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const _be16 = n => [(n >> 8) & 255, n & 255];
+const _cc = s => [s.charCodeAt(0), s.charCodeAt(1), s.charCodeAt(2), s.charCodeAt(3)];
+const _zeros = n => new Array(n).fill(0);
+function _box(type, ...parts) {
+  const body = _cat(parts.map(_u8));
+  return _cat([_u8([..._be32(8 + body.length), ..._cc(type)]), body]);
+}
+const _fb = (ver, flags) => [ver, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255];
+const _MATRIX = [..._be32(0x00010000), ..._be32(0), ..._be32(0), ..._be32(0), ..._be32(0x00010000), ..._be32(0), ..._be32(0), ..._be32(0), ..._be32(0x40000000)];
+
+// MP4 with H.264. `description` is the avcC record that the encoder delivers (format "avc"). moov comes first (fast start).
+function muxMp4({ width, height, description, samples, timescale = 90000 }) {
+  const n = samples.length;
+  if (!n) throw new Error("no video samples");
+  const dts = samples.map(s => Math.round(s.ts * timescale / 1e6));
+  const dur = dts.map((d, i) => (i + 1 < n ? dts[i + 1] - d : 0));
+  dur[n - 1] = n > 1 ? dur[n - 2] : Math.round(timescale / 30);
+  for (const d of dur) if (d <= 0) throw new Error("timestamps are not increasing (the encoder reordered frames)");
+  const totalDur = dts[n - 1] + dur[n - 1] - dts[0];
+  const runs = [];
+  for (const d of dur) { if (runs.length && runs[runs.length - 1][1] === d) runs[runs.length - 1][0]++; else runs.push([1, d]); }
+  const keys = [];
+  samples.forEach((s, i) => { if (s.key) keys.push(i + 1); });
+  const avc1 = _box("avc1", _zeros(6), _be16(1), _be16(0), _be16(0), _zeros(12), _be16(width), _be16(height),
+    _be32(0x00480000), _be32(0x00480000), _be32(0), _be16(1), _zeros(32), _be16(0x18), _be16(0xFFFF), _box("avcC", description));
+  const stsd = _box("stsd", _fb(0, 0), _be32(1), avc1);
+  const stts = _box("stts", _fb(0, 0), _be32(runs.length), runs.flatMap(r => [..._be32(r[0]), ..._be32(r[1])]));
+  const stss = _box("stss", _fb(0, 0), _be32(keys.length), keys.flatMap(k => _be32(k)));
+  const stsc = _box("stsc", _fb(0, 0), _be32(1), _be32(1), _be32(n), _be32(1));
+  const stsz = _box("stsz", _fb(0, 0), _be32(0), _be32(n), samples.flatMap(s => _be32(s.data.length)));
+  const build = chunkOffset => {
+    const stco = _box("stco", _fb(0, 0), _be32(1), _be32(chunkOffset));
+    const stbl = _box("stbl", stsd, stts, stss, stsc, stsz, stco);
+    const vmhd = _box("vmhd", _fb(0, 1), _be16(0), _zeros(6));
+    const dinf = _box("dinf", _box("dref", _fb(0, 0), _be32(1), _box("url ", _fb(0, 1))));
+    const minf = _box("minf", vmhd, dinf, stbl);
+    const hdlr = _box("hdlr", _fb(0, 0), _be32(0), _cc("vide"), _zeros(12), [...Array.from("VideoHandler", c => c.charCodeAt(0)), 0]);
+    const mdhd = _box("mdhd", _fb(0, 0), _be32(0), _be32(0), _be32(timescale), _be32(totalDur), _be16(0x55C4), _be16(0));
+    const mdia = _box("mdia", mdhd, hdlr, minf);
+    const tkhd = _box("tkhd", _fb(0, 3), _be32(0), _be32(0), _be32(1), _be32(0), _be32(totalDur), _zeros(8),
+      _be16(0), _be16(0), _be16(0), _be16(0), _MATRIX, _be32(width * 65536), _be32(height * 65536));
+    const mvhd = _box("mvhd", _fb(0, 0), _be32(0), _be32(0), _be32(timescale), _be32(totalDur), _be32(0x00010000), _be16(0x0100),
+      _zeros(10), _MATRIX, _zeros(24), _be32(2));
+    return _box("moov", mvhd, _box("trak", tkhd, mdia));
+  };
+  const ftyp = _box("ftyp", _cc("isom"), _be32(512), _cc("isom"), _cc("iso2"), _cc("avc1"), _cc("mp41"));
+  let payload = 0;
+  for (const s of samples) payload += s.data.length;
+  if (payload + 8 > 0xFFFFFFFF) throw new Error("video is larger than 4 GB");
+  const moov = build(ftyp.length + build(0).length + 8);
+  return [ftyp, moov, _u8([..._be32(8 + payload), ..._cc("mdat")]), ...samples.map(s => s.data)];
+}
+
+// WebM with VP8 / VP9 (codecId "V_VP8" / "V_VP9"). A new cluster starts at every key frame; cues are included so players can seek.
+function muxWebm({ width, height, codecId, samples }) {
+  const n = samples.length;
+  if (!n) throw new Error("no video samples");
+  const ebmlId = id => { const b = []; let v = id; while (v > 0) { b.unshift(v % 256); v = Math.floor(v / 256); } return b; };
+  const size8 = len => { const b = new Array(8); b[0] = 1; let v = len; for (let i = 7; i >= 1; i--) { b[i] = v % 256; v = Math.floor(v / 256); } return b; };
+  const el = (id, ...parts) => { const body = _cat(parts.map(_u8)); return _cat([_u8([...ebmlId(id), ...size8(body.length)]), body]); };
+  const uint = (id, v, len) => { const b = []; let x = v; do { b.unshift(x % 256); x = Math.floor(x / 256); } while (x > 0); while (len && b.length < len) b.unshift(0); return el(id, b); };
+  const str = (id, t) => el(id, Array.from(t, c => c.charCodeAt(0)));
+  const f64 = (id, v) => { const b = new Uint8Array(8); new DataView(b.buffer).setFloat64(0, v); return el(id, b); };
+  const ms = samples.map(s => Math.round(s.ts / 1000));
+  for (let i = 1; i < n; i++) if (ms[i] < ms[i - 1]) throw new Error("timestamps are not increasing (the encoder reordered frames)");
+  const lastDur = n > 1 ? Math.max(1, ms[n - 1] - ms[n - 2]) : 33;
+  const header = el(0x1A45DFA3, uint(0x4286, 1), uint(0x42F7, 1), uint(0x42F2, 4), uint(0x42F3, 8), str(0x4282, "webm"), uint(0x4287, 4), uint(0x4285, 2));
+  const info = el(0x1549A966, uint(0x2AD7B1, 1000000), str(0x4D80, "brainvc"), str(0x5741, "brainvc"), f64(0x4489, ms[n - 1] - ms[0] + lastDur));
+  const tracks = el(0x1654AE6B, el(0xAE, uint(0xD7, 1), uint(0x73C5, 1), uint(0x83, 1), uint(0x9C, 0), str(0x86, codecId),
+    el(0xE0, uint(0xB0, width), uint(0xBA, height))));
+  const groups = [];
+  let cur = null;
+  samples.forEach((s, i) => {
+    if (!cur || (s.key && i > 0) || ms[i] - cur.t0 > 30000) { cur = { t0: ms[i], blocks: [] }; groups.push(cur); }
+    const rel = ms[i] - cur.t0;
+    cur.blocks.push(el(0xA3, [0x81, (rel >> 8) & 255, rel & 255, s.key ? 0x80 : 0], s.data));
+  });
+  const clusters = groups.map(g => el(0x1F43B675, uint(0xE7, g.t0), ...g.blocks));
+  const cues = positions => el(0x1C53BB6B, ...groups.map((g, i) => el(0xBB, uint(0xB3, g.t0), el(0xB7, uint(0xF7, 1), uint(0xF1, positions[i], 8)))));
+  const cuesLen = cues(groups.map(() => 0)).length;
+  const positions = [];
+  let pos = info.length + tracks.length + cuesLen;
+  for (const c of clusters) { positions.push(pos); pos += c.length; }
+  const cuesEl = cues(positions);
+  const segLen = info.length + tracks.length + cuesEl.length + clusters.reduce((a, c) => a + c.length, 0);
+  return [header, _u8([...ebmlId(0x18538067), ...size8(segLen)]), info, tracks, cuesEl, ...clusters];
 }
 // =====================================================================
 // ===== CORE END =====
@@ -1164,6 +1285,7 @@ $("numPre").onchange = () => { store.set("pre", $("numPre").value); };
 const tc = $("tc"), tctx = tc.getContext("2d");
 let enc = null, sendRun = false, t0 = 0, lastIdx = -1, beaconMs = 0, introMs = 0, lastIntro = "", beaconCache = {};
 function updateTxButtons() {
+  if (typeof updateVideoUi === "function") updateVideoUi();
   $("bStart").disabled = !enc || sendRun;
   $("bHalt").disabled = !sendRun;
   $("bFull").disabled = !enc;
@@ -1188,14 +1310,15 @@ function beaconFrame(text) {
   return beaconCache[text];
 }
 function drawTxFrame(n) { paintBytes(enc.frame(n)); }
-function paintBytes(f) {
-  const id = tctx.createImageData(fmt.cols, fmt.rows), d = id.data;
+function renderBytes(ctx, f) {
+  const id = ctx.createImageData(fmt.cols, fmt.rows), d = id.data;
   for (let i = 0; i < fmt.ncells; i++) {
     const v = (f[i >> 3] & (0x80 >> (i & 7))) ? 0 : 255;
     d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
   }
-  tctx.putImageData(id, 0, 0);
+  ctx.putImageData(id, 0, 0);
 }
+function paintBytes(f) { renderBytes(tctx, f); }
 function sendLoop(now) {
   if (!sendRun) return;
   const t = now - t0;
@@ -1230,6 +1353,158 @@ $("numFps").onchange = () => { store.set("fps", $("numFps").value); };
 $("numBeacon").onchange = () => { store.set("beacon", $("numBeacon").value); };
 { const v = store.get("beacon", null); if (v !== null) $("numBeacon").value = v; }
 { const v = store.get("fps", null); if (v) $("numFps").value = v; }
+
+
+// ===== VIDEO EXPORT START =====
+// ============================================================ create a video file (WebCodecs + the muxers above)
+let mkBusy = false, mkCancel = false, mkResult = null;
+function vSet(t, cls) { $("vStatus").textContent = t; $("vStatus").className = cls || "dim"; }
+function updateVideoUi() {
+  $("bMkVideo").disabled = !enc || mkBusy;
+  $("bMkCancel").disabled = !mkBusy;
+  $("bVDl").disabled = !mkResult;
+}
+const mmss = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
+
+// first video codec this browser can encode: H.264 (MP4), else VP9 / VP8 (WebM)
+async function pickVideoCodec(w, h, fps, bitrate) {
+  const cands = [
+    { codec: "avc1.64002A", avc: { format: "avc" }, kind: "mp4" },       // High, level 4.2
+    { codec: "avc1.4D002A", avc: { format: "avc" }, kind: "mp4" },       // Main
+    { codec: "avc1.42002A", avc: { format: "avc" }, kind: "mp4" },       // Baseline
+    { codec: "vp09.00.41.08", kind: "webm", webm: "V_VP9" },
+    { codec: "vp8", kind: "webm", webm: "V_VP8" }
+  ];
+  for (const c of cands) {
+    const cfg = { codec: c.codec, width: w, height: h, bitrate, framerate: fps, latencyMode: "quality" };
+    if (c.avc) cfg.avc = c.avc;
+    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r && r.supported) return { cfg, kind: c.kind, webm: c.webm }; } catch (e) {}
+  }
+  return null;
+}
+
+async function createVideo() {
+  if (mkBusy) return;
+  if (!enc) { vSet("Choose a file above first.", "bad"); return; }
+  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") {
+    vSet("This browser cannot encode video (WebCodecs missing). Use Chrome, Edge, Opera, Firefox 130+ or Safari 16.4+, or the brainvc.au3 file tool.", "bad"); return;
+  }
+  const vfps = parseInt($("selVFps").value) || 60;
+  const dfps = clamp(parseFloat($("numVData").value) || 10, 1, vfps / 2);
+  const passes = clamp(parseInt($("numVPass").value) || 2, 1, 5);
+  const bitrate = (parseFloat($("selVBr").value) || 16) * 1e6;
+  const beaconS = clamp(parseFloat($("numBeacon").value) || 0, 0, 30);
+  const cell = Math.max(1, Math.floor(1920 / fmt.cols));
+  const W = fmt.cols * cell, H = fmt.rows * cell;
+  mkBusy = true; mkCancel = false; mkResult = null; updateVideoUi();
+  $("barV").style.width = "0%";
+  let encoder = null;
+  try {
+    const pick = await pickVideoCodec(W, H, vfps, bitrate);
+    if (!pick) throw new Error("no usable video codec in this browser");
+    const small = document.createElement("canvas"); small.width = fmt.cols; small.height = fmt.rows;
+    const sctx = small.getContext("2d");
+    const big = document.createElement("canvas"); big.width = W; big.height = H;
+    const bctx = big.getContext("2d", { alpha: false }); bctx.imageSmoothingEnabled = false;
+    const samples = []; let description = null, encErr = null;
+    encoder = new VideoEncoder({
+      output: (chunk, meta) => {
+        const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d);
+        if (!description && meta && meta.decoderConfig && meta.decoderConfig.description) {
+          const ds = meta.decoderConfig.description;
+          description = ds instanceof ArrayBuffer ? new Uint8Array(ds.slice(0)) : new Uint8Array(ds.buffer, ds.byteOffset, ds.byteLength).slice();
+        }
+        samples.push({ data: d, ts: chunk.timestamp, key: chunk.type === "key" });
+      },
+      error: e => { encErr = e; }
+    });
+    encoder.configure(pick.cfg);
+
+    const beaconFrames = beaconS > 0 ? Math.round(beaconS * vfps) + 3 * vfps : 0;
+    const dataFrames = Math.round(enc.N * passes * vfps / dfps);
+    const total = beaconFrames + dataFrames;
+    const t0 = performance.now();
+    let vk = 0, lastUi = 0;
+    const emit = async (bytes, repeat) => {
+      renderBytes(sctx, bytes);
+      bctx.drawImage(small, 0, 0, W, H);                                   // crisp upscaling, no smoothing
+      for (let r = 0; r < repeat; r++) {
+        if (mkCancel) throw new Error("cancelled");
+        if (encErr) throw encErr;
+        while (encoder.encodeQueueSize > 8) await new Promise(res => setTimeout(res, 2));
+        const vf = new VideoFrame(big, { timestamp: Math.round(vk * 1e6 / vfps), duration: Math.round(1e6 / vfps) });
+        encoder.encode(vf, { keyFrame: vk % vfps === 0 });                 // a keyframe every second (fast seeking)
+        vf.close(); vk++;
+      }
+      const now = performance.now();
+      if (now - lastUi > 150) {
+        lastUi = now;
+        const pct = Math.min(100, vk * 100 / total), el = (now - t0) / 1000;
+        $("barV").style.width = pct.toFixed(1) + "%";
+        vSet("Encoding frame " + vk + " / " + total + "  -  " + Math.round(pct) + " %  -  " + mmss(el) + " elapsed" + (pct > 2 ? ", about " + mmss(el * (100 - pct) / pct) + " left" : ""));
+        await new Promise(res => setTimeout(res, 0));                      // let the page breathe (progress, Cancel)
+      }
+    };
+    if (beaconS > 0) {                                                     // beacon: logo, then 3-2-1
+      await emit(beaconFrame("BrAiNVC"), Math.round(beaconS * vfps));
+      for (const d of ["3", "2", "1"]) await emit(beaconFrame(d), vfps);
+    }
+    let done = 0;
+    for (let p = 0; p < passes; p++) {
+      for (let n = 0; n < enc.N; n++) {
+        const rep = Math.max(1, Math.round((done + 1) * vfps / dfps) - Math.round(done * vfps / dfps));   // uneven holds alternate (7,8,7,8 ...)
+        await emit(enc.frame(n), rep);
+        done++;
+      }
+    }
+    vSet("Finishing the video ...");
+    await encoder.flush();
+    if (encErr) throw encErr;
+    encoder.close(); encoder = null;
+    if (!samples.length) throw new Error("the encoder produced no frames");
+
+    let parts, mime, ext;
+    if (pick.kind === "mp4") {
+      if (!description) throw new Error("the H.264 encoder did not deliver its configuration");
+      parts = muxMp4({ width: W, height: H, description, samples }); mime = "video/mp4"; ext = "mp4";
+    } else {
+      parts = muxWebm({ width: W, height: H, codecId: pick.webm, samples }); mime = "video/webm"; ext = "webm";
+    }
+    const f0 = $("sfile").files[0];
+    const base = f0 ? f0.name.replace(/\.[^.]*$/, "") : "brainvc";
+    const blob = new Blob(parts, { type: mime });
+    mkResult = { blob, name: base + "." + ext };
+    $("barV").style.width = "100%";
+    vSet("Done: " + mkResult.name + " (" + (blob.size / 1048576).toFixed(1) + " MB, " + mmss(vk / vfps) + " of video, " + ext.toUpperCase() + ").", "ok");
+    downloadVideo();
+  } catch (e) {
+    if (encoder) { try { encoder.close(); } catch (e2) {} }
+    $("barV").style.width = "0%";
+    vSet(e.message === "cancelled" ? "Cancelled." : "Could not create the video: " + e.message, e.message === "cancelled" ? "dim" : "bad");
+  } finally {
+    mkBusy = false; updateVideoUi();
+  }
+}
+function downloadVideo() {
+  if (!mkResult) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(mkResult.blob); a.download = mkResult.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+// ===== VIDEO EXPORT END =====
+
+$("bMkVideo").onclick = createVideo;
+$("bMkCancel").onclick = () => { mkCancel = true; };
+$("bVDl").onclick = downloadVideo;
+$("selVFps").onchange = () => { $("numVData").max = parseInt($("selVFps").value) / 2; store.set("vfps", $("selVFps").value); };
+$("numVData").onchange = () => store.set("vdata", $("numVData").value);
+$("numVPass").onchange = () => store.set("vpass", $("numVPass").value);
+$("selVBr").onchange = () => store.set("vbr", $("selVBr").value);
+for (const [id, key] of [["selVFps", "vfps"], ["numVData", "vdata"], ["numVPass", "vpass"], ["selVBr", "vbr"]]) {
+  const v = store.get(key, null); if (v !== null) $(id).value = v;
+}
+$("numVData").max = parseInt($("selVFps").value) / 2;
 
 // ---- start
 applyFormat();
