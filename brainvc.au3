@@ -16,13 +16,15 @@
 #include <Math.au3>
 
 Global Const $INI = @ScriptDir & "\brainvc.ini"
+Global Const $APP_URL = "https://github.com/BrAiNeeBug/brainvc"
+Global Const $APP_WEB = "https://braineebug.github.io/brainvc/brainvc.html"
 Global Const $SEC = "brainvc"
 
 ; ---- frame layout (16:9 grid, COLS*ROWS must be divisible by 8) -------
-Global $COLS = Int(_Cfg("Cols", 128)), $ROWS = Int(_Cfg("Rows", 72))
+Global $COLS = Int(_Cfg("Cols", 160)), $ROWS = Int(_Cfg("Rows", 90))
 If $COLS < 16 Or $ROWS < 9 Or Mod($COLS * $ROWS, 8) <> 0 Then
-	$COLS = 128
-	$ROWS = 72
+	$COLS = 160
+	$ROWS = 90
 EndIf
 Global $NCELLS = $COLS * $ROWS             ; e.g. 9216 cells = 9216 bits
 Global $NBYTES = Int($NCELLS / 8)          ; e.g. 1152 bytes per frame
@@ -69,7 +71,7 @@ Global $g_iGrpCache = -1, $g_aParity[$FEC_M][$PAY]
 
 ; ---- menu colors / controls ----------------------------------------------
 Global Const $C_BG = 0x0E1014, $C_FIELD = 0x1D222B, $C_LINE = 0x2A303B, $C_TXT = 0xE8EAEE, $C_DIM = 0x8B94A3
-Global Const $C_ACC = 0x4CC2FF, $C_ACC_HOT = 0x7AD3FF, $C_BTN = 0x2A3140, $C_BTN_HOT = 0x3A4458, $C_OK = 0x4CD98A, $C_BAD = 0xFF6B6B
+Global Const $C_ACC = 0x4CC2FF, $C_ACC_HOT = 0x7AD3FF, $C_BTN = 0x2A3140, $C_BTN_HOT = 0x3A4458, $C_OK = 0x4CD98A, $C_BAD = 0xFF6B6B, $C_WARN = 0xFFB454
 Global $mGrid, $mK, $mM, $mVfps, $mDfps, $mPass, $mBeacon, $mRun, $mOpen, $mThr, $mRead, $mInfo
 Global $g_aBtnId[8], $g_aBtnBase[8], $g_aBtnHot[8], $g_iBtnN = 0, $g_iHot = 0
 Global $g_hPG = 0, $g_idPgTitle, $g_idPgStat, $g_idPgFill, $g_idPgCancel, $g_bPgCancel = False   ; progress window
@@ -914,6 +916,38 @@ Func _T($sText, $x, $y, $w, $h, $iCol = 0xE8EAEE, $iBk = -2, $iStyle = -1)
 	Return $id
 EndFunc   ;==>_T
 
+; the BrAiNVC logo exactly like the web header: "Br" and "VC" in the text color, "AiN" in the accent color.
+; Three labels are placed one after the other; the next one starts exactly where the text of the previous one ends.
+Func _Logo($hWin, $x, $y, $iPt)
+	GUISetFont($iPt, 700, 0, "Segoe UI")
+	Local $aT[3] = ["Br", "AiN", "VC"], $aC[3] = [$C_TXT, $C_ACC, $C_TXT]
+	Local $i, $id, $w, $aP, $cx = $x
+	For $i = 0 To 2
+		$id = _T($aT[$i], $cx, $y, -1, -1, $aC[$i])
+		$w = _TextWidth($id, $aT[$i])
+		If $w < 4 Then      ; could not measure the text: use the size of the label minus its padding
+			$aP = ControlGetPos($hWin, "", $id)
+			$w = IsArray($aP) ? $aP[2] - Round($iPt * 0.5) : Round($iPt * 0.8 * StringLen($aT[$i]))
+		EndIf
+		$cx += $w
+	Next
+	GUISetFont(9, 400, 0, "Segoe UI")
+EndFunc   ;==>_Logo
+
+; real pixel width of a text in the font of a control (no padding)
+Func _TextWidth($id, $sText)
+	Local $hWnd = GUICtrlGetHandle($id)
+	Local $aDC = DllCall("user32.dll", "handle", "GetDC", "hwnd", $hWnd)
+	If @error Or Not $aDC[0] Then Return 0
+	Local $aFont = DllCall("user32.dll", "lresult", "SendMessageW", "hwnd", $hWnd, "uint", 0x31, "wparam", 0, "lparam", 0)   ; WM_GETFONT
+	Local $aOld = DllCall("gdi32.dll", "handle", "SelectObject", "handle", $aDC[0], "handle", $aFont[0])
+	Local $tSize = DllStructCreate("long cx;long cy")
+	DllCall("gdi32.dll", "bool", "GetTextExtentPoint32W", "handle", $aDC[0], "wstr", $sText, "int", StringLen($sText), "struct*", $tSize)
+	DllCall("gdi32.dll", "handle", "SelectObject", "handle", $aDC[0], "handle", $aOld[0])
+	DllCall("user32.dll", "int", "ReleaseDC", "hwnd", $hWnd, "handle", $aDC[0])
+	Return DllStructGetData($tSize, "cx")
+EndFunc   ;==>_TextWidth
+
 ; flat button made of a label (colors can be set freely, hover handled in the message loop)
 Func _Btn($sText, $x, $y, $w, $h, $iBase, $iHot, $iFg)
 	Local $id = GUICtrlCreateLabel($sText, $x, $y, $w, $h, BitOR($SS_CENTER, $SS_CENTERIMAGE, $SS_NOTIFY))
@@ -961,13 +995,12 @@ Func _Toggle($id)
 EndFunc   ;==>_Toggle
 
 Func _Menu()
-	Local $hM = GUICreate("BrAiNVC", 580, 582)
+	Local $hM = GUICreate("BrAiNVC", 580, 606)
 	GUISetBkColor($C_BG)
 	GUISetFont(9, 400, 0, "Segoe UI")
 	Local $id
 
-	$id = _T("BrAiNVC", 24, 12, 300, 36, $C_ACC)
-	GUICtrlSetFont($id, 22, 800, 0, "Segoe UI")
+	_Logo($hM, 24, 10, 22)
 	_T("optical data link  -  file encoder / decoder", 26, 50, 520, 18, $C_DIM)
 	Local $bEnc = _Btn("ENCODE      file  ->  video", 24, 82, 256, 54, $C_ACC, $C_ACC_HOT, 0x04202E)
 	Local $bDec = _Btn("DECODE      video  ->  file", 300, 82, 256, 54, $C_ACC, $C_ACC_HOT, 0x04202E)
@@ -1017,13 +1050,17 @@ Func _Menu()
 	$mInfo = _T("", 24, 464, 532, 58, $C_DIM)
 	Local $sFf = _FindFfmpeg()
 	If $sFf = "" Then
-		_T("ffmpeg: NOT FOUND - put ffmpeg.exe next to this script", 24, 540, 400, 18, $C_BAD)
+		_T("ffmpeg: NOT FOUND - put ffmpeg.exe next to this script", 24, 540, 280, 18, $C_BAD)
 	ElseIf $sFf = "ffmpeg" Then
-		_T("ffmpeg: found in PATH", 24, 540, 400, 18, $C_OK)
+		_T("ffmpeg: found in PATH", 24, 540, 280, 18, $C_OK)
 	Else
-		_T("ffmpeg: found next to the script", 24, 540, 400, 18, $C_OK)
+		_T("ffmpeg: found next to the script", 24, 540, 280, 18, $C_OK)
 	EndIf
+	Local $bAbout = _Btn("About", 318, 534, 110, 28, $C_BTN, $C_BTN_HOT, $C_TXT)
 	Local $bDef = _Btn("Defaults", 440, 534, 116, 28, $C_BTN, $C_BTN_HOT, $C_TXT)
+	Local $lDisc = _T("Experimental, provided AS IS. Private, non-commercial use only. Click here for the full disclaimer.", 24, 578, 532, 16, $C_WARN, -2, $SS_NOTIFY)
+	GUICtrlSetFont($lDisc, 8, 400, 0, "Segoe UI")
+	GUICtrlSetCursor($lDisc, 0)
 	GUISetState(@SW_SHOW)
 
 	Local $iMsg, $hTm = TimerInit()
@@ -1039,6 +1076,8 @@ Func _Menu()
 				_MenuStart("dec")
 			Case $bDef
 				_MenuDefaults()
+			Case $bAbout, $lDisc
+				_About($hM)
 			Case $lRun
 				_Toggle($mRun)
 			Case $lOpen
@@ -1051,6 +1090,76 @@ Func _Menu()
 		EndIf
 	WEnd
 EndFunc   ;==>_Menu
+
+
+; =====================================================================
+; About window: links and the disclaimer
+; =====================================================================
+Func _DisclaimerText()
+	Local $s = "BrAiNVC is intended strictly for private, personal, and non-commercial use." & @CRLF & @CRLF & _
+			"The use of BrAiNVC by companies, commercial organizations, military organizations, government agencies, public authorities, or other institutional entities is NOT permitted without prior explicit written permission from the project author." & @CRLF & @CRLF & _
+			"Such organizations must contact the project author and obtain approval before using, deploying, integrating, or distributing BrAiNVC." & @CRLF & @CRLF & _
+			"SECURITY NOTICE" & @CRLF & _
+			"BrAiNVC is an experimental project and is provided AS IS, without any guarantees regarding security, reliability, availability, or data integrity." & @CRLF & @CRLF & _
+			"The software has not been designed, audited, or certified for professional, commercial, military, governmental, or security-critical environments." & @CRLF & @CRLF & _
+			"In particular:" & @CRLF & _
+			"- No guarantee of confidentiality or secure data transmission is provided." & @CRLF & _
+			"- No protection against interception, manipulation, or unauthorized access is guaranteed." & @CRLF & _
+			"- The software must not be used to transmit sensitive, confidential, classified, or otherwise critical information." & @CRLF & _
+			"- BrAiNVC must not be considered a secure communication system." & @CRLF & @CRLF & _
+			"NO WARRANTY / LIMITATION OF LIABILITY" & @CRLF & _
+			"The software is provided without any express or implied warranty. The author accepts no responsibility for damages, data loss, security incidents, or other consequences resulting from the use or misuse of this project, to the extent permitted by applicable law." & @CRLF & @CRLF & _
+			"By using BrAiNVC, you acknowledge and accept these limitations and usage restrictions." & @CRLF & @CRLF & _
+			"If you represent a company, military organization, government agency, or other institution and wish to use BrAiNVC, please contact the project author for prior authorization."
+	Return $s
+EndFunc   ;==>_DisclaimerText
+
+Func _About($hParent)
+	Local $iN0 = $g_iBtnN, $iMsg, $id
+	GUISetState(@SW_DISABLE, $hParent)
+	Local $hA = GUICreate("About BrAiNVC", 580, 580, -1, -1, BitOR($WS_CAPTION, $WS_SYSMENU), -1, $hParent)
+	GUISetBkColor($C_BG, $hA)
+	GUISetFont(9, 400, 0, "Segoe UI")
+	_Logo($hA, 24, 10, 22)
+	_T("optical data link  -  file encoder / decoder  (the live scanner is in the web version)", 26, 50, 532, 18, $C_DIM)
+	_T("Experimental test mode - NOT SAFE. Please follow the usage restrictions below.", 26, 72, 532, 18, $C_WARN)
+
+	_Section("LINKS", 104)
+	_T("GitHub", 24, 132, 90, 18, $C_DIM)
+	Local $lGit = _T($APP_URL, 120, 132, 436, 18, $C_ACC, -2, $SS_NOTIFY)
+	GUICtrlSetFont($lGit, 9, 400, 4, "Segoe UI")
+	GUICtrlSetCursor($lGit, 0)
+	_T("Web version", 24, 156, 90, 18, $C_DIM)
+	Local $lWeb = _T($APP_WEB, 120, 156, 436, 18, $C_ACC, -2, $SS_NOTIFY)
+	GUICtrlSetFont($lWeb, 9, 400, 4, "Segoe UI")
+	GUICtrlSetCursor($lWeb, 0)
+
+	_Section("DISCLAIMER AND USAGE RESTRICTIONS", 194)
+	Local $e = GUICtrlCreateEdit(_DisclaimerText(), 24, 224, 532, 290, BitOR($ES_READONLY, $ES_MULTILINE, $WS_VSCROLL))
+	GUICtrlSetBkColor($e, $C_FIELD)
+	GUICtrlSetColor($e, $C_TXT)
+	Local $bClose = _Btn("Close", 456, 526, 100, 30, $C_ACC, $C_ACC_HOT, 0x04202E)
+	GUISetState(@SW_SHOW, $hA)
+	GUICtrlSendMsg($e, $EM_SETSEL, 0, 0)
+	While 1
+		$iMsg = GUIGetMsg()
+		Switch $iMsg
+			Case $GUI_EVENT_CLOSE, $bClose
+				ExitLoop
+			Case $lGit
+				ShellExecute($APP_URL)
+			Case $lWeb
+				ShellExecute($APP_WEB)
+		EndSwitch
+		_Hover($hA)
+	WEnd
+	GUISetState(@SW_ENABLE, $hParent)
+	GUIDelete($hA)
+	GUISwitch($hParent)
+	$g_iBtnN = $iN0
+	$g_iHot = 0
+	WinActivate($hParent)
+EndFunc   ;==>_About
 
 ; live estimate under the fields
 Func _MenuInfo()
@@ -1098,7 +1207,7 @@ Func _Relaunch($sArgs)
 EndFunc   ;==>_Relaunch
 
 Func _MenuDefaults()
-	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", "128x72")
+	_SetCombo($mGrid, "96x54|128x72|160x90|192x108", "160x90")
 	GUICtrlSetData($mK, 8)
 	GUICtrlSetData($mM, 2)
 	_SetCombo($mVfps, "30|60", "60")
