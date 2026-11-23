@@ -1,8 +1,9 @@
-# BrAiNVC `v4.0`
+# BrAiNVC `v4.0` · `v5.0 (testing)`
 
 **Optical data link** – turn any file into a stream of pixel frames, show it on a screen or put it into a video, and read it back from a screen, a video file or a camera.
 
-[![Web version](https://img.shields.io/badge/▶_Web_version-open-4cc2ff?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
+[![Web v4.0](https://img.shields.io/badge/▶_Web_v4.0-stable-4cc2ff?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
+[![Web v5.0](https://img.shields.io/badge/▶_Web_v5.0-testing-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc-v5.html)
 [![Demo video](https://img.shields.io/badge/Demo-realtime_decoding_v2.3-ff6b6b?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=UmDyXyGJnX0)
 ![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)
 ![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)
@@ -15,7 +16,7 @@
 </p>
 
 > [!IMPORTANT]
-> **Please use the web version.** The Windows runtime (`brainvc.au3` / `brainvc.exe`) is only meant for testing and very large files.
+> **Please use the web version.** v4.0 is the stable one, v5.0 is new and still being tested (see [Versions](#-versions)).
 > BrAiNVC is **not safe** and still in **test mode** – please follow the [restrictions](#️-disclaimer--usage-restrictions) below. Really.
 
 ---
@@ -25,11 +26,25 @@
 - **Encode** a file into pixel frames (header, CRC16, Reed-Solomon error correction)
 - **Show** the frames on a screen or **export** them as a video file
 - **Scan** them back live from a screen, a video file or a camera
-- **Same frame format** in the web edition and in the AutoIt tool
+- **Same frame format** in the v4.0 web edition and in the AutoIt tool (v5.0 uses a new 32-bit header)
+
+## 🆕 Versions
+
+| Version | File | Frame counter | Max. file | Status |
+|---|---|---|---|---|
+| **v4.0** | [`brainvc.html`](https://braineebug.github.io/brainvc/brainvc.html) | 16 bit | 65 535 frames (about 50 MB, depending on grid and FEC) | stable |
+| **v5.0** | [`brainvc-v5.html`](https://braineebug.github.io/brainvc/brainvc-v5.html) | **32 bit** | 4 GB (limited by RAM and the MP4 container) | **testing** |
+
+v5.0 widens the frame header to `n(4) N(4) fileLen(4) crc(2)` (14 bytes instead of 10), which removes the 65 535-frame limit.
+The scanner also checks that the file length fits the frame count, to reject rare false CRC hits.
+
+> [!WARNING]
+> **v5.0 is not compatible with v4.0.** Videos and frames from one version cannot be read by the other, and `brainvc.au3` / `brainvc.exe` still use the v4 format.
+> Use the same version for sending and receiving. Feedback on v5.0 is welcome.
 
 ## 🚀 Quick start
 
-1. Open the **[web version](https://braineebug.github.io/brainvc/brainvc.html)** in your browser.
+1. Open the web version in your browser: **[v4.0 (stable)](https://braineebug.github.io/brainvc/brainvc.html)** or **[v5.0 (testing)](https://braineebug.github.io/brainvc/brainvc-v5.html)**.
 2. **Send** tab: pick a file – the beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.
 3. **Receive** tab: choose screen, video file or camera as source and let it decode.
 
@@ -37,8 +52,9 @@
 
 | Part | Purpose |
 |---|---|
-| `brainvc.html` | Web edition – live scanner, encoder, video export. **Recommended.** |
-| `brainvc.au3` / `brainvc.exe` | Windows file tool (uses ffmpeg) – for testing and very large files |
+| `brainvc.html` | Web edition v4.0 – live scanner, encoder, video export. **Stable.** |
+| `brainvc-v5.html` | Web edition v5.0 – same, with 32-bit frame counters. **Testing.** |
+| `brainvc.au3` / `brainvc.exe` | Windows file tool for encoding/decoding with ffmpeg (v4 format) |
 | `old/` | Older versions, including the **v2 runtime live-scanner** you can try out |
 
 ## 🎬 Demo
