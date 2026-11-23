@@ -1,4 +1,4 @@
-Note: for large files use the windows runtime (the runtime have no live scanner anymore*)
+Note: Please use the WebVersion, the Windows-Runtime is only for testing and very large files
 
 full web version:
 https://braineebug.github.io/brainvc/brainvc.html
