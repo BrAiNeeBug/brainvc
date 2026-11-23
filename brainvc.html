@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BrAiNVC web</title>
+<title>BrAiNVC v4.0 web</title>
 <style>
 :root{--bg:#0e1014;--panel:#15181e;--panel2:#1b1f27;--line:#272c36;--txt:#e8eaee;--dim:#8b94a3;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
 *{box-sizing:border-box}
@@ -14,6 +14,7 @@ header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;
 .logo{font-weight:700;letter-spacing:.3px;font-size:17px}
 .logo b{color:var(--acc)}
 .logo span{color:var(--dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.logo .ver{font-style:normal;display:inline-block;color:var(--acc);border:1px solid #2a5d78;border-radius:6px;padding:0 6px;font-size:11px;font-weight:600;letter-spacing:.04em;margin-left:8px;vertical-align:1px}
 header nav{margin-left:auto}
 main{max-width:1040px;margin:0 auto;padding:16px 18px 48px}
 
@@ -100,7 +101,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </head>
 <body>
 <header>
-  <div class="logo">Br<b>AiN</b>VC<span>optical data link &middot; web edition</span></div>
+  <div class="logo">Br<b>AiN</b>VC<em class="ver">v4.0</em><span>optical data link &middot; web edition</span></div>
   <nav class="seg">
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
@@ -240,7 +241,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 <!-- ============================== ABOUT ============================== -->
 <section id="about" class="about" hidden>
   <div class="panel">
-    <h2>BrAiNVC &middot; optical data link</h2>
+    <h2>BrAiNVC v4.0 &middot; optical data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
     This web edition does the live work and can also create video files; <code>brainvc.au3</code> / <code>brainvc.exe</code> is the file tool for encoding and decoding with ffmpeg.
@@ -281,7 +282,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </section>
 
 <footer class="note">
-  <b>Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
+  <b>BrAiNVC v4.0 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
   Not a secure communication system. <a href="#" class="link" id="lnkAbout">Read the full disclaimer</a> &middot;
   <a class="link" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub</a>
 </footer>
