@@ -223,7 +223,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
       <div class="field"><span class="cap">Data frames / s</span><input id="numVData" type="number" min="1" max="30" value="10"></div>
       <div class="field"><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="2"></div>
       <div class="field"><span class="cap">Quality</span>
-        <select id="selVBr"><option value="8">Normal (8 Mbit/s)</option><option value="16" selected>High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
+        <select id="selVBr"><option value="auto" selected>Auto (small file)</option><option value="2">Tiny (2 Mbit/s)</option><option value="4">Small (4 Mbit/s)</option><option value="8">Normal (8 Mbit/s)</option><option value="16">High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
       <div class="field grow"></div>
       <div class="field"><span class="cap">&nbsp;</span>
         <div class="btnrow"><button id="bMkVideo" class="primary" disabled>Create video</button><button id="bMkCancel" disabled>Cancel</button></div></div>
@@ -1373,6 +1373,13 @@ function updateVideoUi() {
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
 
 // first video codec this browser can encode: H.264 (MP4), else VP9 / VP8 (WebM)
+// "Auto": the content only changes dfps times per second (the rest are repeats), so the bitrate follows the data rate instead of a fixed
+// high value. Budget: about 12 bit per cell for every new data frame, plus one fresh keyframe per second (counted as 1.5 data frames).
+function autoBitrate(dfps) {
+  const bps = (dfps + 1.5) * fmt.ncells * 12;
+  return clamp(Math.round(bps / 1e5) / 10, 1, 32) * 1e6;              // 1 ... 32 Mbit/s, rounded to 0.1
+}
+
 async function pickVideoCodec(w, h, fps, bitrate) {
   const cands = [
     { codec: "avc1.64002A", avc: { format: "avc" }, kind: "mp4" },       // High, level 4.2
@@ -1382,9 +1389,12 @@ async function pickVideoCodec(w, h, fps, bitrate) {
     { codec: "vp8", kind: "webm", webm: "V_VP8" }
   ];
   for (const c of cands) {
-    const cfg = { codec: c.codec, width: w, height: h, bitrate, framerate: fps, latencyMode: "quality" };
-    if (c.avc) cfg.avc = c.avc;
-    try { const r = await VideoEncoder.isConfigSupported(cfg); if (r && r.supported) return { cfg, kind: c.kind, webm: c.webm }; } catch (e) {}
+    for (const mode of ["variable", null]) {                           // variable bitrate lets static parts cost almost nothing
+      const cfg = { codec: c.codec, width: w, height: h, bitrate, framerate: fps, latencyMode: "quality" };
+      if (mode) cfg.bitrateMode = mode;
+      if (c.avc) cfg.avc = c.avc;
+      try { const r = await VideoEncoder.isConfigSupported(cfg); if (r && r.supported) return { cfg: r.config || cfg, kind: c.kind, webm: c.webm }; } catch (e) {}
+    }
   }
   return null;
 }
@@ -1398,7 +1408,8 @@ async function createVideo() {
   const vfps = parseInt($("selVFps").value) || 60;
   const dfps = clamp(parseFloat($("numVData").value) || 10, 1, vfps / 2);
   const passes = clamp(parseInt($("numVPass").value) || 2, 1, 5);
-  const bitrate = (parseFloat($("selVBr").value) || 16) * 1e6;
+  const brSel = $("selVBr").value;
+  const bitrate = brSel === "auto" ? autoBitrate(dfps) : (parseFloat(brSel) || 8) * 1e6;
   const beaconS = clamp(parseFloat($("numBeacon").value) || 0, 0, 30);
   const cell = Math.max(1, Math.floor(1920 / fmt.cols));
   const W = fmt.cols * cell, H = fmt.rows * cell;
@@ -1481,7 +1492,7 @@ async function createVideo() {
     const blob = new Blob(parts, { type: mime });
     mkResult = { blob, name: base + "." + ext };
     $("barV").style.width = "100%";
-    vSet("Done: " + mkResult.name + " (" + (blob.size / 1048576).toFixed(1) + " MB, " + mmss(vk / vfps) + " of video, " + ext.toUpperCase() + ").", "ok");
+    vSet("Done: " + mkResult.name + " (" + (blob.size / 1048576).toFixed(1) + " MB, " + mmss(vk / vfps) + " of video, " + ext.toUpperCase() + ", target " + (bitrate / 1e6).toFixed(1) + " Mbit/s).", "ok");
     downloadVideo();
   } catch (e) {
     if (encoder) { try { encoder.close(); } catch (e2) {} }
