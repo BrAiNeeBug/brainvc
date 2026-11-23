@@ -1,4 +1,4 @@
-# BrAiNVC `v4.0(16bit)` · `v5.0(32bit) (testing)`
+# BrAiNVC `v4.0@16bit` · `v5.0@32bit (testing)`
 
 **Optical data link** – turn any file into a stream of pixel frames, show it on a screen or put it into a video, and read it back from a screen, a video file or a camera.
 
