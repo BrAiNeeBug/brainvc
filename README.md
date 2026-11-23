@@ -8,12 +8,6 @@
 ![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)
 ![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)
 
-<p align="center">
-  <img width="815" alt="BrAiNVC web – send" src="https://github.com/user-attachments/assets/fb8cce57-5526-4d43-bf21-83102277d831" />
-</p>
-<p align="center">
-  <img width="582" alt="BrAiNVC web – receive" src="https://github.com/user-attachments/assets/95c202e7-46db-494d-b9e9-7a9ec8a8671a" />
-</p>
 
 > [!IMPORTANT]
 > **Please use the web version.** v4.0 is the stable one, v5.0 is new and still being tested (see [Versions](#-versions)).
