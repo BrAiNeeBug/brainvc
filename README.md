@@ -11,9 +11,6 @@
 <p align="center">
   <img width="815" alt="BrAiNVC web – send" src="https://github.com/user-attachments/assets/fb8cce57-5526-4d43-bf21-83102277d831" />
 </p>
-<p align="center">
-  <img width="582" alt="BrAiNVC web – receive" src="https://github.com/user-attachments/assets/95c202e7-46db-494d-b9e9-7a9ec8a8671a" />
-</p>
 
 > [!IMPORTANT]
 > **Please use the web version v5.1.** v4.0 is only kept to read old videos (see [Versions](#-versions)).
@@ -33,8 +30,7 @@
 
 | Version | File | Frame counter | Max. file | Status |
 |---|---|---|---|---|
-| **v5.1** | [`brainvc-v5.html`](https://braineebug.github.io/brainvc/brainvc-v5.html) | **32 bit** | 4 GB (limited by RAM and the MP4 container) | **stable, recommended** |
-| v4.0 | [`brainvc.html`](https://braineebug.github.io/brainvc/brainvc.html) | 16 bit | 65 535 frames (about 50 MB, depending on grid and FEC) | legacy |
+| **v5.1** | [`brainvc.html`](https://braineebug.github.io/brainvc/brainvc.html) | **32 bit** | 4 GB (limited by RAM and the MP4 container) | **stable, recommended** |
 
 **What is new in v5:**
 - The frame header is now `n(4) N(4) fileLen(4) crc(2)` (14 bytes instead of 10), which removes the 65 535-frame limit.
@@ -47,7 +43,7 @@
 
 ## 🚀 Quick start
 
-1. Open **[BrAiNVC v5.1](https://braineebug.github.io/brainvc/brainvc-v5.html)** in your browser.
+1. Open **[BrAiNVC v5.1](https://braineebug.github.io/brainvc/brainvc.html)** in your browser.
 2. **Send** tab: pick a file – the beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.
 3. **Receive** tab: choose screen, video file or camera as source and let it decode.
 
@@ -55,14 +51,12 @@
 
 | Part | Purpose |
 |---|---|
-| `brainvc-v5.html` | Web edition v5.1 – live scanner, encoder, video export. **Recommended.** |
-| `brainvc.html` | Web edition v4.0 – legacy, for old videos |
-| `brainvc.au3` / `brainvc.exe` | Windows file tool with ffmpeg (v4 format) – legacy, no longer developed |
+| `brainvc.html` | Web edition v5.1 – live scanner, encoder, video export. |
 | `old/` | Older versions, including the **v2 runtime live-scanner** you can try out |
 
 ## 🎬 Demo
 
-Latest realtime decoding test (v2.3): <https://www.youtube.com/watch?v=UmDyXyGJnX0>
+
 
 ---
 
