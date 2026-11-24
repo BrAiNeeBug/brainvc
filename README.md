@@ -8,7 +8,7 @@
 
 
 > [!IMPORTANT]
-> **Please use the web version v5.1.** v4.0 is only kept to read old videos (see [Versions](#-versions)).
+> **Please use the web version v5.1.** Older versions (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
 > BrAiNVC is **not safe** and still in **test mode** – please follow the [restrictions](#️-disclaimer--usage-restrictions) below. Really.
 
 ---
@@ -26,6 +26,7 @@
 | Version | File | Frame counter | Max. file | Status |
 |---|---|---|---|---|
 | **v5.1** | [`brainvc.html`](https://braineebug.github.io/brainvc/brainvc.html) | **32 bit** | 4 GB (limited by RAM and the MP4 container) | **stable, recommended** |
+| v4.0 | `old/` | 16 bit | 65 535 frames (about 50 MB, depending on grid and FEC) | legacy |
 
 **What is new in v5:**
 - The frame header is now `n(4) N(4) fileLen(4) crc(2)` (14 bytes instead of 10), which removes the 65 535-frame limit.
@@ -33,7 +34,7 @@
 - Video export has an **Auto (small file)** bitrate (default) that follows the data rate, plus Tiny (2) and Small (4 Mbit/s) presets and variable bitrate mode. Files are smaller than with v4.0 and smaller than the old ffmpeg tool.
 
 > [!WARNING]
-> **v5 is not compatible with v4.0.** Videos and frames from one version cannot be read by the other, and `brainvc.au3` / `brainvc.exe` use the v4 format.
+> **v5 is not compatible with v4.0.** Videos and frames from one version cannot be read by the other, and the old `brainvc.au3` / `brainvc.exe` tool also used the v4 format.
 > Use the same version for sending and receiving.
 
 ## 🚀 Quick start
@@ -47,11 +48,7 @@
 | Part | Purpose |
 |---|---|
 | `brainvc.html` | Web edition v5.1 – live scanner, encoder, video export. |
-| `old/` | Older versions, including the **v2 runtime live-scanner** you can try out |
-
-## 🎬 Demo
-
-
+| `old/` | Older versions: **v4.0** (16-bit frame counter) and **v2** (including the runtime live-scanner you can try out) |
 
 ---
 
