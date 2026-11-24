@@ -114,7 +114,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <summary>Format <span>&middot; sender and receiver must use the same values</span></summary>
   <div class="panel-row">
     <div class="field"><span class="cap">Grid (cells)</span>
-      <select id="selGrid"><option>96x54</option><option>128x72</option><option selected>160x90</option><option>192x108</option></select></div>
+      <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data frames per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity frames per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
     <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (same defaults as brainvc.au3)">Reset to defaults</button></div>
@@ -200,7 +200,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <div class="panel">
     <div class="panel-row">
       <div class="field grow"><span class="cap">File to send</span><input id="sfile" type="file"></div>
-      <div class="field"><span class="cap">Data frames / s</span><input id="numFps" type="number" min="1" max="30" value="10"></div>
+      <div class="field"><span class="cap">Data frames / s</span><input id="numFps" type="number" min="1" max="30" value="16"></div>
       <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="5"></div>
       <div class="field"><span class="cap">&nbsp;</span>
         <div class="btnrow">
@@ -220,8 +220,8 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
         <span class="dim">MP4 (H.264) or WebM, ready for YouTube or for decoding later. Uses the file chosen above and the beacon setting.</span></div>
       <div class="field"><span class="cap">Video frame rate</span>
         <select id="selVFps"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
-      <div class="field"><span class="cap">Data frames / s</span><input id="numVData" type="number" min="1" max="30" value="10"></div>
-      <div class="field"><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="2"></div>
+      <div class="field"><span class="cap">Data frames / s</span><input id="numVData" type="number" min="1" max="30" value="16"></div>
+      <div class="field"><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="1"></div>
       <div class="field"><span class="cap">Quality</span>
         <select id="selVBr"><option value="auto" selected>Auto (small file)</option><option value="2">Tiny (2 Mbit/s)</option><option value="4">Small (4 Mbit/s)</option><option value="8">Normal (8 Mbit/s)</option><option value="16">High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
       <div class="field grow"></div>
