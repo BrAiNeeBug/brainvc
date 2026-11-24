@@ -117,7 +117,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data frames per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity frames per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
-    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (same defaults as brainvc.au3)">Reset to defaults</button></div>
+    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default">Reset to defaults</button></div>
   </div>
   <div class="hint">Same frame format as brainvc.au3: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
 </details>
@@ -145,8 +145,8 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
       </div>
       <div class="field" id="grpFile"><span class="cap">Video file reading</span>
         <div class="seg" title="Exact steps through every frame and never misses one. Play runs the file like a live stream.">
-          <label><input type="radio" name="fmode" value="exact" checked><span>Exact</span></label>
-          <label><input type="radio" name="fmode" value="play"><span>Play</span></label>
+          <label><input type="radio" name="fmode" value="exact"><span>Exact</span></label>
+          <label><input type="radio" name="fmode" value="play" checked><span>Play</span></label>
         </div>
       </div>
       <div class="field" id="grpSpeed" hidden><span class="cap">Play speed</span>
@@ -275,8 +275,8 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 
   <div class="panel">
     <h2>Settings</h2>
-    <p class="dim" style="margin-bottom:12px">Everything you set on this page is remembered in this browser. Reset brings back the defaults, which are the same as in <code>brainvc.au3</code>:
-    grid 160&times;90, K = 8, M = 2, 10 data frames/s, 5 s beacon, 60 fps video, 2 file repeats (plus: 10 s pre-buffer, Live play, Exact file reading).</p>
+    <p class="dim" style="margin-bottom:12px">Everything you set on this page is remembered in this browser. Reset brings back the defaults:
+    grid 192&times;108, K = 8, M = 2, 16 data frames/s, 5 s beacon, 60 fps video, 1 file repeat, Auto bitrate (plus: 10 s pre-buffer, Play file reading at 1&times;).</p>
     <button id="bResetAll2" class="danger">Reset all settings to defaults</button>
   </div>
 </section>
