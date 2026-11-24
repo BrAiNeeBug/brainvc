@@ -14,7 +14,7 @@
 ---
 
 ## ✨ What it does
-
+[`TEST-VIDEO`](https://www.youtube.com/watch?v=AmDRbs97zhk)
 - **Encode** a file into pixel frames (header, CRC16, Reed-Solomon error correction)
 - **Show** the frames on a screen or **export** them as a video file
 - **Scan** them back live from a screen, a video file or a camera
