@@ -119,7 +119,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <div class="field"><span class="cap">Parity frames per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
     <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default">Reset to defaults</button></div>
   </div>
-  <div class="hint">Same frame format as brainvc.au3: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
+  <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
 </details>
 
 <!-- ============================ RECEIVE ============================ -->
@@ -244,8 +244,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <h2>BrAiNVC v5.1 &middot; optical data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
-    This web edition does the live work and can also create video files; <code>brainvc.au3</code> / <code>brainvc.exe</code> is the file tool for encoding and decoding with ffmpeg.
-    Note: v5 uses 32-bit frame counters and is not compatible with v4 videos or the current <code>brainvc.au3</code>.</p>
+    Note: v5 is not backward compatible &ndash; videos made with v4 or older versions cannot be read, and v5 videos cannot be read by them.</p>
     <div class="btnrow">
       <a class="linkbtn" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub: BrAiNeeBug/brainvc</a>
       <a class="linkbtn" href="https://braineebug.github.io/brainvc/brainvc.html" target="_blank" rel="noopener noreferrer">Web version</a>
@@ -600,7 +599,7 @@ function sniff(b) {
 
 // ------------------------------------------------------------------ beacon
 // Logo + countdown drawn with a 5x7 pixel font inside a 1-cell border ring.
-// Same layout as brainvc.au3, so a beacon from either side can be recognised by either side.
+// Beacon layout (logo, then 3-2-1).
 const GLYPHS = {
   B: "11110" + "10001" + "10001" + "11110" + "10001" + "10001" + "11110",
   r: "00000" + "00000" + "10110" + "11001" + "10000" + "10000" + "10000",
@@ -805,7 +804,7 @@ $("tabTx").onclick = () => showTab("tx");
 $("tabAbout").onclick = () => showTab("about");
 $("lnkAbout").onclick = e => { e.preventDefault(); showTab("about"); };
 
-// back to the defaults (grid 160x90, K 8, M 2, 10 frames/s, 5 s beacon, 10 s pre-buffer ...), same as brainvc.au3
+// back to the defaults (grid 192x108, K 8, M 2, 16 frames/s, 5 s beacon, 10 s pre-buffer ...)
 function resetAll() {
   if (!confirm("Reset all settings to their defaults?\n\nGrid, K/M, frame rate, beacon, pre-buffer, file mode and saved corners.\nThe page reloads.")) return;
   try { Object.keys(localStorage).filter(k => k.startsWith("bvc_")).forEach(k => localStorage.removeItem(k)); } catch (e) {}
@@ -1403,7 +1402,7 @@ async function createVideo() {
   if (mkBusy) return;
   if (!enc) { vSet("Choose a file above first.", "bad"); return; }
   if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") {
-    vSet("This browser cannot encode video (WebCodecs missing). Use Chrome, Edge, Opera, Firefox 130+ or Safari 16.4+, or the brainvc.au3 file tool.", "bad"); return;
+    vSet("This browser cannot encode video (WebCodecs missing). Use Chrome, Edge, Opera, Firefox 130+ or Safari 16.4+.", "bad"); return;
   }
   const vfps = parseInt($("selVFps").value) || 60;
   const dfps = clamp(parseFloat($("numVData").value) || 10, 1, vfps / 2);
