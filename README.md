@@ -2,15 +2,10 @@
 
 **Optical data link** – turn any file into a stream of pixel frames, show it on a screen or put it into a video, and read it back from a screen, a video file or a camera.
 
-[![Web v5.1](https://img.shields.io/badge/▶_Web_v5.1-stable-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc-v5.html)
-[![Web v4.0](https://img.shields.io/badge/Web_v4.0-legacy-4cc2ff?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
-[![Demo video](https://img.shields.io/badge/Demo-realtime_decoding_v2.3-ff6b6b?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=UmDyXyGJnX0)
+[![Web v5.1](https://img.shields.io/badge/▶_Web_v5.1-stable-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
 ![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)
 ![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)
 
-<p align="center">
-  <img width="815" alt="BrAiNVC web – send" src="https://github.com/user-attachments/assets/fb8cce57-5526-4d43-bf21-83102277d831" />
-</p>
 
 > [!IMPORTANT]
 > **Please use the web version v5.1.** v4.0 is only kept to read old videos (see [Versions](#-versions)).
