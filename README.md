@@ -46,7 +46,7 @@
 
 ## 🚀 Quick start
 
-1. Open **[BrAiNVC v5.3](https://braineebug.github.io/brainvc/brainvc.html)** in your browser.
+1. Open **[BrAiNVC](https://braineebug.github.io/brainvc/brainvc.html)** in your browser.
 2. **Send** tab: pick a file and choose **Screen** or **Video file**. With Screen, the beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.
 3. **Receive** tab: choose screen, video file or camera as source and let it decode.
 4. **A-Link** tab (optional): pick a file, a profile and a format, press *Create audio*, and later load the audio file in the *Receive* box of the same tab.
