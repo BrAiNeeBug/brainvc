@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BrAiNVC v5.2 web</title>
+<title>BrAiNVC v5.3 web</title>
 <style>
 :root{--bg:#0e1014;--panel:#15181e;--panel2:#1b1f27;--line:#272c36;--txt:#e8eaee;--dim:#8b94a3;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
 *{box-sizing:border-box}
@@ -101,7 +101,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </head>
 <body>
 <header>
-  <div class="logo">Br<b>AiN</b>VC<em class="ver">v5.2</em><span>optical data link &middot; web edition</span></div>
+  <div class="logo">Br<b>AiN</b>VC<em class="ver">v5.3</em><span>optical data link &middot; web edition</span></div>
   <nav class="seg">
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
@@ -260,13 +260,10 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
       <div class="field"><span class="cap">Level (%)</span><input id="aAmp" type="number" min="5" max="95" value="50"></div>
       <div class="field"><span class="cap">Sample rate (WAV, MP3)</span><select id="aRate"><option value="57600">57.6 kHz</option><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option><option value="32000">32 kHz</option><option value="22050">22.05 kHz</option></select></div>
       <div class="field"><span class="cap">Codec bitrate (kbit/s)</span><input id="aKbps" type="number" min="8" max="320" step="8" value="48" title="MP3 and WebM/Opus only"></div>
-      <div class="field"><span class="cap">Frame size</span><select id="aGrid"><option value="64x36">288 B (64&times;36)</option><option value="96x54" selected>648 B (96&times;54)</option><option value="128x72">1152 B (128&times;72)</option><option value="192x108">2592 B (192&times;108)</option></select></div>
-      <div class="field"><span class="cap">Data per group (K)</span><input id="aK" type="number" min="1" max="64" value="8"></div>
-      <div class="field"><span class="cap">Parity frames (M)</span><input id="aM" type="number" min="1" max="8" value="2"></div>
       <div class="field"><span class="cap">&nbsp;</span><label class="chk"><input type="checkbox" id="aVerify" checked><span>Verify after creating</span></label></div>
     </div>
     <div class="hint" id="aInfo"></div>
-    <div class="hint">Lossy codecs lose high tones: Opus below 64 kbit/s keeps roughly 3 kHz, MP3 needs about 96 kbit/s for 4800 baud. Smaller frames lose less when a codec damages one. &quot;Verify&quot; decodes the finished MP3/WebM again, so you know at once whether the settings survive.</div>
+    <div class="hint">Lossy codecs lose high tones: Opus below 64 kbit/s keeps roughly 3 kHz, MP3 needs about 96 kbit/s for 4800 baud. Frame size, K and M come from the Format panel above; smaller frames lose less when a codec damages one. &quot;Verify&quot; decodes the finished MP3/WebM again, so you know at once whether the settings survive.</div>
   </details>
   <div class="panel">
     <h3 style="margin:0 0 8px">Receive</h3>
@@ -283,7 +280,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 <!-- ============================== ABOUT ============================== -->
 <section id="about" class="about" hidden>
   <div class="panel">
-    <h2>BrAiNVC v5.2 &middot; optical + experimental acoustic (A-Link) data link</h2>
+    <h2>BrAiNVC v5.3 &middot; optical + experimental acoustic (A-Link) data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
     Note: v5 is not backward compatible &ndash; videos made with v4 or older versions cannot be read, and v5 videos cannot be read by them.</p>
@@ -323,7 +320,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </section>
 
 <footer class="note">
-  <b>BrAiNVC v5.2 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
+  <b>BrAiNVC v5.3 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
   Not a secure communication system. <a href="#" class="link" id="lnkAbout">Read the full disclaimer</a> &middot;
   <a class="link" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub</a>
 </footer>
@@ -827,6 +824,7 @@ function applyFormat() {
   samplerDirty = true; tpls = beaconTemplates(fmt); beaconCache = {};
   resetReceiver();
   enc = null; haltSend(); updateTxButtons();
+  if (typeof audInfo === "function") audInfo();
 }
 const pv = $("pv"), pvCtx = pv.getContext("2d");
 {
@@ -1763,15 +1761,15 @@ const AUD_PROFILES = {
   opus:     { fmt: "webm", rate: 48000, baud: 1200,  f0: 600,  df: 1800, bps: 1, kbps: 48 },
   robust:   { fmt: "webm", rate: 48000, baud: 600,   f0: 1200, df: 1200, bps: 1, kbps: 48 }
 };
-const AUD_IDS = { aFormat: "fmt", aRate: "rate", aBaud: "baud", aF0: "f0", aDf: "df", aBps: "bps", aKbps: "kbps", aAmp: "amp", aGrid: "grid", aK: "K", aM: "M" };
+const AUD_IDS = { aFormat: "fmt", aRate: "rate", aBaud: "baud", aF0: "f0", aDf: "df", aBps: "bps", aKbps: "kbps", aAmp: "amp" };
 function audSet() {
   const n = (id, a, b, d) => clamp(parseFloat($(id).value) || d, a, b);
-  const [c, r] = $("aGrid").value.split("x").map(Number);
   return { fmt: $("aFormat").value, rate: parseInt($("aRate").value), baud: n("aBaud", 50, 48000, 1200), f0: n("aF0", 50, 40000, 600), df: n("aDf", 50, 40000, 1200),
-    bps: parseInt($("aBps").value), kbps: n("aKbps", 8, 320, 64), amp: n("aAmp", 5, 95, 50) / 100, K: n("aK", 1, 64, 8), M: n("aM", 1, 8, 2), grid: c + "x" + r, cols: c, rows: r };
+    bps: parseInt($("aBps").value), kbps: n("aKbps", 8, 320, 64), amp: n("aAmp", 5, 95, 50) / 100 };
 }
 function audInfo() {
-  const s = audSet(), f = makeFormat(s.cols, s.rows, s.K, s.M), rate = s.fmt === "webm" ? 48000 : s.rate;
+  if (!fmt) return;                       // set later by applyFormat()
+  const s = audSet(), f = fmt, rate = s.fmt === "webm" ? 48000 : s.rate;
   const top = s.f0 + ((1 << s.bps) - 1) * s.df, net = s.baud * s.bps / 8 * (f.pay / f.nbytes) * (f.K / f.S);
   let t = "Raw " + (s.baud * s.bps) + " bit/s, net about " + net.toFixed(0) + " byte/s (1 MB takes " + (1048576 / net / 60).toFixed(1) + " min). Tones " + s.f0 + " to " + top + " Hz.";
   if (top > rate * 0.45) t += " Too high for " + rate + " Hz sample rate!";
@@ -1784,7 +1782,7 @@ $("aProf").onchange = () => { const p = AUD_PROFILES[$("aProf").value]; if (p) a
 for (const id of Object.keys(AUD_IDS)) $(id).onchange = $(id).oninput = () => { $("aProf").value = "custom"; audInfo(); audSave(); };
 {
   const o = store.get("aud", null);
-  if (o) { audApply(o); if (o.prof) $("aProf").value = o.prof; } else { $("aProf").value = "opus"; audApply(AUD_PROFILES.opus); $("aGrid").value = "96x54"; $("aK").value = 8; $("aM").value = 2; $("aAmp").value = 50; }
+  if (o) { audApply(o); if (o.prof) $("aProf").value = o.prof; } else { $("aProf").value = "opus"; audApply(AUD_PROFILES.opus); $("aAmp").value = 50; }
   if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) { if ($("aFormat").value === "webm") { $("aFormat").value = "wav"; $("aProf").value = "wavmax"; audApply(AUD_PROFILES.wavmax); } }
   audInfo();
 }
@@ -1793,7 +1791,7 @@ let audioTxBlob = null, audioRxBlob = null, audioTxName = "brainvc-audio.wav", a
 const aSet = (id, msg, kind) => { $(id).textContent = msg; $(id).className = kind || "dim"; };
 $("aMake").onclick = async () => {
   const file = $("aSendFile").files[0]; if (!file) { aSet("aSendStatus", "Choose a file first.", "bad"); return; }
-  const s = audSet(), f = makeFormat(s.cols, s.rows, s.K, s.M), p = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps }, rate = s.fmt === "webm" ? 48000 : s.rate;
+  const s = audSet(), f = fmt, p = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps }, rate = s.fmt === "webm" ? 48000 : s.rate;
   const bar = pct => { $("aBar").style.width = pct.toFixed(1) + "%"; };
   $("aMake").disabled = true; $("aDownload").disabled = true; audioTxBlob = null; bar(0);
   try {
