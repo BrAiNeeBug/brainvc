@@ -1,14 +1,14 @@
-# BrAiNVC `v5.4`
+# BrAiNVC `v5.5`
 
 **Optical + acoustic data link** – turn any file into a stream of pixel frames (or sound), show it on a screen, put it into a video or an audio file, and read it back from a screen, a video file, a camera or an audio file.
 
-[![Web v5.4](https://img.shields.io/badge/▶_Web_v5.4-stable-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
+[![Web v5.5](https://img.shields.io/badge/▶_Web_v5.5-stable-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
 ![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)
 ![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)
 
 
 > [!IMPORTANT]
-> **Please use the web version v5.4.** Older versions (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
+> **Please use the web version v5.5.** Older versions (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
 > BrAiNVC is **not safe** and still in **test mode** – please follow the [restrictions](#️-disclaimer--usage-restrictions) below. Really.
 
 ---
@@ -21,14 +21,16 @@
 - **A-Link** – the same frames as sound: create **WAV, MP3 or WebM/Opus** files and read them back
 - **Small videos** – the Auto bitrate adapts to the data rate, so video files stay small
 - **Big files** – 32-bit frame counters, no more 65 535-frame limit
+- **Fast** – the data rate can be as high as the video frame rate, e.g. a 30 fps video carrying 30 data frames per second
+- **Your own layout** – the **Layout** button lets you drag and resize every box and saves the arrangement in your browser
 
 
 ## 🚀 Quick start
 
 1. Open **[BrAiNVC](https://braineebug.github.io/brainvc/brainvc.html)** in your browser.
-2. **Send** tab: pick a file and choose **Screen** or **Video file**. With Screen, the beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.
+2. **Send** tab: pick a file and choose **Video file** or **Screen**. Changing Grid, K, M or the speed updates the chosen file right away. With Screen, the beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.
 3. **Receive** tab: choose screen, video file or camera as source and let it decode.
-4. **A-Link** tab (optional): pick a file, a profile and a format, press *Create audio*, and later load the audio file in the *Receive* box of the same tab.
+4. **A-Link** tab (optional): pick a file and press *Create audio* (default profile: WAV, lossless), or choose another profile and format first. Later load the audio file in the *Receive* box of the same tab.
 
 
 ## 🔊 A-Link (acoustic data link)
@@ -41,11 +43,16 @@ A-Link uses the same frames, CRC16 and Reed-Solomon recovery as the optical link
 - **Verify after creating:** finished MP3 and WebM files are decoded again at once, so you see immediately whether the settings survive the codec.
 
 
+## 🧱 Layout
+
+Press **Layout** in the header, then drag a box to move it or drag its corner to resize it. **Done** leaves the edit mode, **Reset layout** puts everything back. Each tab keeps its own arrangement, so boxes no longer jump around when the video window or a status text changes size.
+
+
 ## 🧩 Components
 
 | Part | Purpose |
 |---|---|
-| `brainvc.html` | Web edition v5.4 – live scanner, encoder, video export, A-Link audio. |
+| `brainvc.html` | Web edition v5.5 – live scanner, encoder, video export, A-Link audio. |
 | `old/` | Older versions: **v4.0** (16-bit frame counter) and **v2** (including the runtime live-scanner you can try out) |
 
 ---
