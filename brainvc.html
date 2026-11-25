@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BrAiNVC v5.1 web</title>
+<title>BrAiNVC v5.2 web</title>
 <style>
 :root{--bg:#0e1014;--panel:#15181e;--panel2:#1b1f27;--line:#272c36;--txt:#e8eaee;--dim:#8b94a3;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
 *{box-sizing:border-box}
@@ -101,10 +101,11 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </head>
 <body>
 <header>
-  <div class="logo">Br<b>AiN</b>VC<em class="ver">v5.1</em><span>optical data link &middot; web edition</span></div>
+  <div class="logo">Br<b>AiN</b>VC<em class="ver">v5.2</em><span>optical data link &middot; web edition</span></div>
   <nav class="seg">
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
+    <button id="tabAudio">A-Link</button>
     <button id="tabAbout">About</button>
   </nav>
 </header>
@@ -115,8 +116,8 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <div class="panel-row">
     <div class="field"><span class="cap">Grid (cells)</span>
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
-    <div class="field"><span class="cap">Data frames per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
-    <div class="field"><span class="cap">Parity frames per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
+    <div class="field"><span class="cap">Data per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
+    <div class="field"><span class="cap">Parity per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
     <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default">Reset to defaults</button></div>
   </div>
   <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
@@ -200,48 +201,89 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <div class="panel">
     <div class="panel-row">
       <div class="field grow"><span class="cap">File to send</span><input id="sfile" type="file"></div>
-      <div class="field"><span class="cap">Data frames / s</span><input id="numFps" type="number" min="1" max="30" value="16"></div>
-      <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="5"></div>
-      <div class="field"><span class="cap">&nbsp;</span>
-        <div class="btnrow">
-          <button id="bStart" class="primary" disabled>Start</button>
-          <button id="bHalt" disabled>Stop</button>
-          <button id="bFull" disabled>Fullscreen</button>
+      <div class="field"><span class="cap">Send via</span>
+        <div class="seg">
+          <label><input type="radio" name="txmode" value="screen" checked><span>Screen</span></label>
+          <label><input type="radio" name="txmode" value="video"><span>Video file</span></label>
         </div>
       </div>
     </div>
-    <div class="hint">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it.</div>
-  </div>
-  <div id="tcWrap"><canvas id="tc" width="128" height="72"></canvas></div>
-  <div class="panel stats" id="txInfo">Choose a file (MP3 or WebM/Opus for live listening) and press Start.</div>
-  <div class="panel" id="vidPanel">
-    <div class="panel-row">
-      <div class="field" style="flex-basis:100%"><b>Create a video file</b>
-        <span class="dim">MP4 (H.264) or WebM, ready for YouTube or for decoding later. Uses the file chosen above and the beacon setting.</span></div>
-      <div class="field"><span class="cap">Video frame rate</span>
+    <div class="panel-row" style="margin-top:14px">
+      <div class="field"><span class="cap">Speed (frames/s)</span><input id="numFps" type="number" min="1" max="30" value="16"></div>
+      <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="5"></div>
+      <div class="field vonly" hidden><span class="cap">Video frame rate</span>
         <select id="selVFps"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
-      <div class="field"><span class="cap">Data frames / s</span><input id="numVData" type="number" min="1" max="30" value="16"></div>
-      <div class="field"><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="1"></div>
-      <div class="field"><span class="cap">Quality</span>
+      <div class="field vonly" hidden><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="1"></div>
+      <div class="field vonly" hidden><span class="cap">Quality</span>
         <select id="selVBr"><option value="auto" selected>Auto (small file)</option><option value="2">Tiny (2 Mbit/s)</option><option value="4">Small (4 Mbit/s)</option><option value="8">Normal (8 Mbit/s)</option><option value="16">High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
       <div class="field grow"></div>
       <div class="field"><span class="cap">&nbsp;</span>
-        <div class="btnrow"><button id="bMkVideo" class="primary" disabled>Create video</button><button id="bMkCancel" disabled>Cancel</button></div></div>
+        <div class="btnrow sonly"><button id="bStart" class="primary" disabled>Start</button><button id="bHalt" disabled>Stop</button><button id="bFull" disabled>Fullscreen</button></div>
+        <div class="btnrow vonly" hidden><button id="bMkVideo" class="primary" disabled>Create video</button><button id="bMkCancel" disabled>Cancel</button></div>
+      </div>
     </div>
-    <div class="bar"><i id="barV"></i></div>
+    <div class="infoline" id="txInfo">Choose a file to send.</div>
+    <div class="hint sonly">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it. Pick a speed that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
+    <div class="hint vonly" hidden>Creates an MP4 (H.264) or WebM, ready for YouTube or for decoding later, encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Speed is at most half of the video frame rate. Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
+  </div>
+  <div id="tcWrap" class="sonly"><canvas id="tc" width="128" height="72"></canvas></div>
+  <div class="panel vonly" hidden>
+    <div class="bar" style="margin-top:0"><i id="barV"></i></div>
     <div id="vStatus" class="dim">Choose a file above, then press Create video.</div>
     <div class="btnrow" style="margin-top:10px"><button id="bVDl" class="primary" disabled>Download video</button></div>
-    <div class="hint">Frames are encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Data frames/s: at most half of the video frame rate.
-    Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
   </div>
-  <div class="hint">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.
-  Pick a frame rate that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
+  <div class="hint">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.</div>
+</section>
+
+<!-- ============================== AUDIO ============================== -->
+<section id="audio" hidden>
+  <div class="panel">
+    <h2 style="margin:0 0 6px">BrAiNVC A-Link</h2>
+    <p class="dim" style="margin:0 0 12px">Experimental acoustic data link: a file becomes FSK tones in a WAV, MP3 or WebM/Opus file. The receiver reads all settings from the file itself.</p>
+    <div class="panel-row">
+      <div class="field grow"><span class="cap">File to send</span><input id="aSendFile" type="file"></div>
+      <div class="field"><span class="cap">Audio format</span><select id="aFormat"><option value="wav">WAV (lossless)</option><option value="mp3">MP3</option><option value="webm">WebM / Opus</option></select></div>
+      <div class="field"><span class="cap">&nbsp;</span><button id="aMake" class="primary">Create audio</button></div>
+    </div>
+    <div class="bar"><i id="aBar"></i></div>
+    <div id="aSendStatus" class="dim">Choose a file to create an audio transmission.</div>
+    <div class="btnrow" style="margin-top:10px"><button id="aDownload" class="primary" disabled>Download audio</button></div>
+  </div>
+  <details class="panel" id="aSetBox" open>
+    <summary>A-Link settings <span>&middot; only the sender needs them</span></summary>
+    <div class="panel-row">
+      <div class="field"><span class="cap">Profile</span><select id="aProf"><option value="wavmax">WAV max (lossless)</option><option value="mp3fast">MP3 fast (128 kbit/s)</option><option value="mp3small">MP3 small (80 kbit/s)</option><option value="opus">WebM/Opus (48 kbit/s)</option><option value="robust">Robust (WebM/MP3, slow)</option><option value="custom">Custom</option></select></div>
+      <div class="field"><span class="cap">Baud (symbols/s)</span><input id="aBaud" type="number" min="50" max="48000" value="1200"></div>
+      <div class="field"><span class="cap">Lowest tone (Hz)</span><input id="aF0" type="number" min="50" max="40000" value="600"></div>
+      <div class="field"><span class="cap">Tone spacing (Hz)</span><input id="aDf" type="number" min="50" max="40000" value="1800"></div>
+      <div class="field"><span class="cap">Tones</span><select id="aBps"><option value="1">2 (1 bit)</option><option value="2">4 (2 bit)</option></select></div>
+      <div class="field"><span class="cap">Level (%)</span><input id="aAmp" type="number" min="5" max="95" value="50"></div>
+      <div class="field"><span class="cap">Sample rate (WAV, MP3)</span><select id="aRate"><option value="57600">57.6 kHz</option><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option><option value="32000">32 kHz</option><option value="22050">22.05 kHz</option></select></div>
+      <div class="field"><span class="cap">Codec bitrate (kbit/s)</span><input id="aKbps" type="number" min="8" max="320" step="8" value="48" title="MP3 and WebM/Opus only"></div>
+      <div class="field"><span class="cap">Frame size</span><select id="aGrid"><option value="64x36">288 B (64&times;36)</option><option value="96x54" selected>648 B (96&times;54)</option><option value="128x72">1152 B (128&times;72)</option><option value="192x108">2592 B (192&times;108)</option></select></div>
+      <div class="field"><span class="cap">Data per group (K)</span><input id="aK" type="number" min="1" max="64" value="8"></div>
+      <div class="field"><span class="cap">Parity frames (M)</span><input id="aM" type="number" min="1" max="8" value="2"></div>
+      <div class="field"><span class="cap">&nbsp;</span><label class="chk"><input type="checkbox" id="aVerify" checked><span>Verify after creating</span></label></div>
+    </div>
+    <div class="hint" id="aInfo"></div>
+    <div class="hint">Lossy codecs lose high tones: Opus below 64 kbit/s keeps roughly 3 kHz, MP3 needs about 96 kbit/s for 4800 baud. Smaller frames lose less when a codec damages one. &quot;Verify&quot; decodes the finished MP3/WebM again, so you know at once whether the settings survive.</div>
+  </details>
+  <div class="panel">
+    <h3 style="margin:0 0 8px">Receive</h3>
+    <div class="field"><span class="cap">A-Link audio file (WAV, MP3 or WebM/Opus)</span><input id="aReceiveFile" type="file" accept="audio/*,.wav,.mp3,.webm,.ogg,.opus"></div>
+    <div class="bar"><i id="aRxBar"></i></div>
+    <div id="aRxStatus" class="dim">Select an audio file created by A-Link.</div>
+    <div class="btnrow" style="margin-top:10px"><button id="aRxDownload" class="primary" disabled>Download restored file</button></div>
+  </div>
+  <div class="panel hint">
+    <b>How it works:</b> a fixed 1200 baud preamble (sync word plus all settings) leads into the data tones, so the receiver finds the start and the settings on its own, even after the codec delays the signal. Frames use the same CRC16 and Reed-Solomon recovery as the optical link. WebM/Opus is recorded in real time by the browser (as long as the playing time); WAV and MP3 are created faster than real time. MP3 encoding loads the lamejs library from a CDN once.
+  </div>
 </section>
 
 <!-- ============================== ABOUT ============================== -->
 <section id="about" class="about" hidden>
   <div class="panel">
-    <h2>BrAiNVC v5.1 &middot; optical data link</h2>
+    <h2>BrAiNVC v5.2 &middot; optical + experimental acoustic (A-Link) data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
     Note: v5 is not backward compatible &ndash; videos made with v4 or older versions cannot be read, and v5 videos cannot be read by them.</p>
@@ -275,13 +317,13 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
   <div class="panel">
     <h2>Settings</h2>
     <p class="dim" style="margin-bottom:12px">Everything you set on this page is remembered in this browser. Reset brings back the defaults:
-    grid 192&times;108, K = 8, M = 2, 16 data frames/s, 5 s beacon, 60 fps video, 1 file repeat, Auto bitrate (plus: 10 s pre-buffer, Play file reading at 1&times;).</p>
+    grid 192&times;108, K = 8, M = 2, 16 data frames/s, 5 s beacon, 60 fps video, 1 file repeat, Auto bitrate (plus: 10 s pre-buffer, Play file reading at 1&times;; A-Link settings: WebM/Opus profile).</p>
     <button id="bResetAll2" class="danger">Reset all settings to defaults</button>
   </div>
 </section>
 
 <footer class="note">
-  <b>BrAiNVC v5.1 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
+  <b>BrAiNVC v5.2 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
   Not a secure communication system. <a href="#" class="link" id="lnkAbout">Read the full disclaimer</a> &middot;
   <a class="link" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub</a>
 </footer>
@@ -794,13 +836,14 @@ const pv = $("pv"), pvCtx = pv.getContext("2d");
 
 // ---- tabs
 function showTab(name) {
-  for (const [sec, btn] of [["rx", "tabRx"], ["tx", "tabTx"], ["about", "tabAbout"]]) {
+  for (const [sec, btn] of [["rx", "tabRx"], ["tx", "tabTx"], ["audio", "tabAudio"], ["about", "tabAbout"]]) {
     $(sec).hidden = sec !== name; $(btn).classList.toggle("on", sec === name);
   }
   window.scrollTo(0, 0);
 }
 $("tabRx").onclick = () => showTab("rx");
 $("tabTx").onclick = () => showTab("tx");
+$("tabAudio").onclick = () => showTab("audio");
 $("tabAbout").onclick = () => showTab("about");
 $("lnkAbout").onclick = e => { e.preventDefault(); showTab("about"); };
 
@@ -1307,8 +1350,8 @@ function updateTxInfo(n, pass) {
   if (!enc) return;
   const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
   const kb = fps * fmt.pay * fmt.K / fmt.S / 1024;
-  $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; frames: <b>" + enc.N + "</b> (" + enc.G + " groups of " + fmt.S + ") &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
-    "<br>rate: " + fps + " frames/s &asymp; <b>" + kb.toFixed(1) + " kB/s</b> &middot; one pass takes " + (enc.N / fps).toFixed(1) + " s";
+  $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; <b>" + enc.N + "</b> frames in " + enc.G + " groups of " + fmt.S + " &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
+    "<br>speed: " + fps + " frames/s &asymp; <b>" + kb.toFixed(1) + " kB/s</b> &middot; one pass takes " + (enc.N / fps).toFixed(1) + " s";
 }
 function beaconFrame(text) {
   if (!beaconCache[text]) beaconCache[text] = bitsToFrame(fmt, beaconBits(fmt, text));
@@ -1358,6 +1401,14 @@ $("numFps").onchange = () => { store.set("fps", $("numFps").value); };
 $("numBeacon").onchange = () => { store.set("beacon", $("numBeacon").value); };
 { const v = store.get("beacon", null); if (v !== null) $("numBeacon").value = v; }
 { const v = store.get("fps", null); if (v) $("numFps").value = v; }
+const txMode = () => document.querySelector('input[name="txmode"]:checked').value;
+function syncTxMode() {
+  const v = txMode() === "video";
+  document.querySelectorAll(".vonly").forEach(e => e.hidden = !v);
+  document.querySelectorAll(".sonly").forEach(e => e.hidden = v);
+}
+document.querySelectorAll('input[name="txmode"]').forEach(r => r.onchange = () => { store.set("txmode", txMode()); if (txMode() === "video") haltSend(); syncTxMode(); });
+{ const v = store.get("txmode", null), el = v && document.querySelector('input[name="txmode"][value="' + v + '"]'); if (el) el.checked = true; syncTxMode(); }
 
 
 // ===== VIDEO EXPORT START =====
@@ -1405,7 +1456,7 @@ async function createVideo() {
     vSet("This browser cannot encode video (WebCodecs missing). Use Chrome, Edge, Opera, Firefox 130+ or Safari 16.4+.", "bad"); return;
   }
   const vfps = parseInt($("selVFps").value) || 60;
-  const dfps = clamp(parseFloat($("numVData").value) || 10, 1, vfps / 2);
+  const dfps = clamp(parseFloat($("numFps").value) || 10, 1, vfps / 2);
   const passes = clamp(parseInt($("numVPass").value) || 2, 1, 5);
   const brSel = $("selVBr").value;
   const bitrate = brSel === "auto" ? autoBitrate(dfps) : (parseFloat(brSel) || 8) * 1e6;
@@ -1513,14 +1564,271 @@ function downloadVideo() {
 $("bMkVideo").onclick = createVideo;
 $("bMkCancel").onclick = () => { mkCancel = true; };
 $("bVDl").onclick = downloadVideo;
-$("selVFps").onchange = () => { $("numVData").max = parseInt($("selVFps").value) / 2; store.set("vfps", $("selVFps").value); };
-$("numVData").onchange = () => store.set("vdata", $("numVData").value);
+$("selVFps").onchange = () => store.set("vfps", $("selVFps").value);
 $("numVPass").onchange = () => store.set("vpass", $("numVPass").value);
 $("selVBr").onchange = () => store.set("vbr", $("selVBr").value);
-for (const [id, key] of [["selVFps", "vfps"], ["numVData", "vdata"], ["numVPass", "vpass"], ["selVBr", "vbr"]]) {
+for (const [id, key] of [["selVFps", "vfps"], ["numVPass", "vpass"], ["selVBr", "vbr"]]) {
   const v = store.get(key, null); if (v !== null) $(id).value = v;
 }
-$("numVData").max = parseInt($("selVFps").value) / 2;
+
+
+// =========================================================== AUDIO LINK (2/4-FSK, WAV / MP3 / WebM-Opus)
+// Shares the optical Encoder, frame format, CRC16 and Reed-Solomon assembler.
+// ===== AUDIO MODEM START =====
+// 2/4-FSK, phase continuous. Stream = lead silence | preamble (alternating + sync word) | header x2 | frames.
+// Preamble and header always use the fixed BOOT profile, so the receiver reads all other settings from the file.
+const AM = { G: 0.8, BOOT: { baud: 1200, f0: 1200, df: 1200, bps: 1 }, ALT: 24, LEAD: 0.25, TAIL: 0.25, HB: 26, TAU: 2 * Math.PI };
+AM.SYNC = (() => { const a = []; let x = 0xACE1; for (let i = 0; i < 32; i++) { x = (x >> 1) ^ ((x & 1) ? 0xB400 : 0); a.push(x & 1); } return a; })();
+AM.PRE = Array.from({ length: AM.ALT }, (_, i) => i & 1).concat(AM.SYNC);
+const amGray = v => v ^ (v >> 1);
+const amUngray = g => { let v = 0; for (; g; g >>= 1) v ^= g; return v; };
+const amFreqs = p => Array.from({ length: 1 << p.bps }, (_, i) => p.f0 + i * p.df);
+function amCrc(b, n) { let c = 0xFFFF; for (let i = 0; i < n; i++) c = ((c << 8) & 0xFFFF) ^ CRC_TAB[((c >> 8) ^ b[i]) & 255]; return c; }
+function amSymbols(bytes, bps) {
+  const nb = bytes.length * 8, out = new Uint8Array(Math.ceil(nb / bps));
+  for (let s = 0; s < out.length; s++) { let v = 0; for (let k = 0; k < bps; k++) { const i = s * bps + k; v = (v << 1) | (i < nb ? (bytes[i >> 3] >> (7 - (i & 7))) & 1 : 0); } out[s] = v; }
+  return out;
+}
+function amHeader(p, f, N, L) {
+  const h = new Uint8Array(AM.HB), v = new DataView(h.buffer);
+  h.set([66, 86, 50]); v.setUint16(3, p.baud); v.setUint16(5, p.f0); v.setUint16(7, p.df); h[9] = p.bps;
+  v.setUint16(10, f.cols); v.setUint16(12, f.rows); h[14] = f.K; h[15] = f.M; v.setUint32(16, N); v.setUint32(20, L); v.setUint16(24, amCrc(h, 24));
+  return h;
+}
+function amParseHeader(h) {
+  if (h[0] !== 66 || h[1] !== 86 || h[2] !== 50) return null;
+  const v = new DataView(h.buffer, h.byteOffset, AM.HB);
+  if (amCrc(h, 24) !== v.getUint16(24)) return null;
+  const p = { baud: v.getUint16(3), f0: v.getUint16(5), df: v.getUint16(7), bps: h[9] };
+  if (!p.baud || !p.df || p.bps < 1 || p.bps > 4) return null;
+  return { p, f: makeFormat(v.getUint16(10), v.getUint16(12), h[14], h[15]), N: v.getUint32(16), L: v.getUint32(20) };
+}
+// segs = [{ syms, p }] -> Float32Array. Highest tone must stay below 0.45 x rate.
+function amSynth(segs, rate, amp) {
+  let total = Math.round(rate * AM.LEAD); const plan = [];
+  for (const s of segs) { const sps = rate / s.p.baud; plan.push({ s, start: total, sps }); total += Math.round(s.syms.length * sps); }
+  total += Math.round(rate * AM.TAIL);
+  const pcm = new Float32Array(total); let ph = 0;
+  for (const { s, start, sps } of plan) {
+    const fr = amFreqs(s.p).map(f => f * AM.TAU / rate);
+    for (let k = 0; k < s.syms.length; k++) {
+      const a = start + Math.round(k * sps), b = start + Math.round((k + 1) * sps), dw = fr[amGray(s.syms[k])];
+      for (let i = a; i < b; i++) { pcm[i] = amp * Math.sin(ph); ph += dw; }
+      ph %= AM.TAU;
+    }
+  }
+  return pcm;
+}
+function amModulate(data, f, p, rate, amp) {
+  if (amFreqs(p)[(1 << p.bps) - 1] > rate * 0.45) throw new Error("Highest tone " + amFreqs(p)[(1 << p.bps) - 1] + " Hz is too high for " + rate + " Hz sample rate.");
+  if (rate / p.baud < 2) throw new Error("Baud rate is too high for this sample rate (need at least 2 samples per symbol).");
+  const enc = new Encoder(f, data), head = amHeader(p, f, enc.N, enc.L);
+  const body = new Uint8Array(enc.N * f.nbytes);
+  for (let n = 0; n < enc.N; n++) body.set(enc.frame(n), n * f.nbytes);
+  const hh = new Uint8Array(head.length * 2); hh.set(head); hh.set(head, head.length);
+  const pcm = amSynth([{ syms: Uint8Array.from(AM.PRE), p: AM.BOOT }, { syms: amSymbols(hh, 1), p: AM.BOOT }, { syms: amSymbols(body, p.bps), p }], rate, amp);
+  return { pcm, N: enc.N, L: enc.L, frames: enc.N };
+}
+function amGoertzel(x, a, n, freq, rate) {
+  const w = 2 * Math.cos(AM.TAU * freq / rate); let q1 = 0, q2 = 0;
+  for (let i = a, e = a + n; i < e; i++) { const q0 = w * q1 - q2 + x[i]; q2 = q1; q1 = q0; }
+  return q1 * q1 + q2 * q2 - w * q1 * q2;
+}
+// energies of all tones for the symbol starting at float position pos (middle part of the symbol only: codecs smear the edges)
+function amEnergies(x, pos, sps, fr, rate, out) {
+  const n = Math.max(2, Math.floor(sps * (sps >= 16 ? AM.G : 1))), a = Math.round(pos + (sps - n) / 2);
+  if (a < 0 || a + n > x.length) return false;
+  for (let t = 0; t < fr.length; t++) out[t] = amGoertzel(x, a, n, fr[t], rate);
+  return true;
+}
+// finds where the preamble starts (sample position, float) or -1
+function amFindStart(x, rate) {
+  const B = AM.BOOT, sps = rate / B.baud, fr = amFreqs(B), e = new Float64Array(2), pre = AM.PRE;
+  const lim = Math.min(x.length - Math.ceil(sps * pre.length) - 1, Math.round(rate * 3));
+  const score = t => { let s = 0; for (let k = 0; k < pre.length; k++) { if (!amEnergies(x, t + k * sps, sps, fr, rate, e)) return -1e9; const ex = e[pre[k]], ot = e[1 - pre[k]]; s += (ex - ot) / (ex + ot + 1e-4); } return s; };
+  let best = -1e9, bt = -1; const step = Math.max(1, Math.floor(sps / 4));
+  for (let t = 0; t < lim; t += step) { const s = score(t); if (s > best) { best = s; bt = t; } }
+  if (bt < 0) return -1;
+  const lo = Math.max(0, Math.floor(bt - sps)), sc = [];          // the peak is a plateau: take its middle, not an edge
+  for (let t = lo; t <= bt + sps; t++) { const s = score(t); sc.push(s); if (s > best) best = s; }
+  let a = -1, b = -1; sc.forEach((s, i) => { if (s >= best * 0.97) { if (a < 0) a = i; b = i; } });
+  return best / pre.length > 0.5 ? lo + (a + b) / 2 : -1;
+}
+function amSlice(x, pos, sps, p, rate, count, e) {         // hard decisions -> symbol values
+  const fr = amFreqs(p), out = new Uint8Array(count);
+  for (let k = 0; k < count; k++) {
+    if (!amEnergies(x, pos + k * sps, sps, fr, rate, e)) return null;
+    let m = 0; for (let t = 1; t < fr.length; t++) if (e[t] > e[m]) m = t;
+    out[k] = amUngray(m);
+  }
+  return out;
+}
+const amToBytes = (syms, bps, nbytes) => { const o = new Uint8Array(nbytes); for (let s = 0; s < syms.length; s++) for (let k = 0; k < bps; k++) { const i = s * bps + k; if (i < nbytes * 8 && (syms[s] >> (bps - 1 - k)) & 1) o[i >> 3] |= 0x80 >> (i & 7); } return o; };
+// x = mono samples. progress(pct) is optional. Returns { bytes, fixed, bad, N, L, p, f }
+async function amDemodulate(x, rate, progress) {
+  const sps = rate / AM.BOOT.baud, t0 = amFindStart(x, rate);
+  if (t0 < 0) throw new Error("No A-Link signal found (sync not detected). Use a file created by this page.");
+  const hpos = t0 + AM.PRE.length * sps, hsym = AM.HB * 8, e = new Float64Array(16);
+  let H = null;
+  for (let c = 0; c < 2 && !H; c++) { const s = amSlice(x, hpos + c * hsym * sps, sps, AM.BOOT, rate, hsym, e); if (s) H = amParseHeader(amToBytes(s, 1, AM.HB)); }
+  if (!H) throw new Error("Audio header is damaged (found the signal, but not the settings).");
+  const { p, f, N, L } = H, spsP = rate / p.baud, nsym = Math.ceil(N * f.nbytes * 8 / p.bps), pos0 = hpos + 2 * hsym * sps;
+  if (!N || N % f.S !== 0 || !L) throw new Error("Invalid stream header.");
+  const total = N * f.nbytes, raw = new Uint8Array(total), fr = amFreqs(p), bps = p.bps;
+  const maxLen = Math.ceil(pos0 + nsym * spsP);
+  if (maxLen > x.length + spsP * 4) throw new Error("Audio is too short: the end of the transmission is missing (" + Math.round(x.length / rate) + " s found, " + Math.round(maxLen / rate) + " s needed).");
+  let bit = 0, last = performance.now();
+  for (let k = 0; k < nsym; k++) {
+    if (!amEnergies(x, pos0 + k * spsP, spsP, fr, rate, e)) break;
+    let m = 0; for (let t = 1; t < fr.length; t++) if (e[t] > e[m]) m = t;
+    const v = amUngray(m);
+    for (let b = bps - 1; b >= 0; b--, bit++) if (bit < total * 8 && (v >> b) & 1) raw[bit >> 3] |= 0x80 >> (bit & 7);
+    if ((k & 4095) === 0 && performance.now() - last > 60) { last = performance.now(); if (progress) progress(k / nsym * 100); await new Promise(r => setTimeout(r, 0)); }
+  }
+  const asm = new Assembler(f); let bad = 0;
+  for (let n = 0; n < N; n++) {
+    const fb = raw.subarray(n * f.nbytes, (n + 1) * f.nbytes);
+    if (frameCrc(fb, f.nbytes) !== ((fb[12] << 8) | fb[13])) { bad++; continue; }
+    const dv = new DataView(fb.buffer, fb.byteOffset, f.nbytes), fn = dv.getUint32(0), fN = dv.getUint32(4), fL = dv.getUint32(8);
+    if (fn < N && fN === N && fL === L) asm.add(fn, N, L, fb.slice(HDR));
+  }
+  if (!asm.allReady()) throw new Error("Not enough valid frames: " + bad + " of " + N + " damaged (too many for error correction). Lower the baud rate or raise the codec bitrate.");
+  const r = asm.assemble();
+  return { bytes: r.bytes, fixed: r.fixed, bad, N, L, p, f };
+}
+// ===== AUDIO MODEM END =====
+
+// ---- audio encoders (WAV, MP3 via lamejs, WebM/Opus via MediaRecorder)
+const tick = () => new Promise(r => setTimeout(r, 0));
+function amMakeWav(pcm, rate) {
+  const n = pcm.length;
+  if (n * 2 > 0xFFFFFFFF - 36) throw new Error("The WAV would exceed the classic RIFF size limit (about 4 GB). Use a smaller file.");
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, n * 2, true);
+  const i16 = new Int16Array(buf, 44, n);
+  for (let i = 0; i < n; i++) i16[i] = Math.max(-1, Math.min(1, pcm[i])) * 32767;
+  return new Blob([buf], { type: "audio/wav" });
+}
+async function amLoadLame() {
+  if (window.lamejs) return;
+  for (const u of ["https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js", "https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"]) {
+    try { await new Promise((ok, no) => { const s = document.createElement("script"); s.src = u; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); } catch (e) {}
+    if (window.lamejs) return;
+  }
+  throw new Error("The MP3 encoder (lamejs) could not be loaded. It needs an internet connection once; or use WAV / WebM.");
+}
+async function amMakeMp3(pcm, rate, kbps, progress) {
+  if (![8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000].includes(rate)) throw new Error("MP3 supports 8, 11.025, 12, 16, 22.05, 24, 32, 44.1 and 48 kHz only.");
+  if (rate <= 24000) kbps = Math.min(kbps, 160);
+  await amLoadLame();
+  const enc = new lamejs.Mp3Encoder(1, rate, kbps), out = [], i16 = new Int16Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) i16[i] = Math.max(-1, Math.min(1, pcm[i])) * 32767;
+  for (let i = 0, c = 0; i < i16.length; i += 1152, c++) {
+    const b = enc.encodeBuffer(i16.subarray(i, i + 1152)); if (b.length) out.push(new Uint8Array(b));
+    if (c % 300 === 0) { if (progress) progress(i / i16.length * 100); await tick(); }
+  }
+  const e = enc.flush(); if (e.length) out.push(new Uint8Array(e));
+  return new Blob(out, { type: "audio/mpeg" });
+}
+async function amMakeWebm(pcm, kbps, progress) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const mime = window.MediaRecorder && ["audio/webm;codecs=opus", "audio/webm"].find(t => MediaRecorder.isTypeSupported(t));
+  if (!AC || !mime) throw new Error("This browser cannot record WebM/Opus. Choose WAV or MP3.");
+  const ctx = new AC({ sampleRate: 48000 });
+  try {
+    const buf = ctx.createBuffer(1, pcm.length, 48000); buf.copyToChannel(pcm, 0);
+    const dest = ctx.createMediaStreamDestination(), src = ctx.createBufferSource(); src.buffer = buf; src.connect(dest);
+    const chunks = [], rec = new MediaRecorder(dest.stream, { mimeType: mime, audioBitsPerSecond: kbps * 1000 });
+    const done = new Promise((ok, no) => { rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.onerror = () => no(new Error("WebM recording failed.")); rec.onstop = () => ok(new Blob(chunks, { type: rec.mimeType || mime })); });
+    await ctx.resume(); rec.start(1000); src.start();
+    const t0 = performance.now(), iv = setInterval(() => { if (progress) progress(Math.min(99, (performance.now() - t0) / 10 / buf.duration)); }, 300);
+    src.onended = () => { clearInterval(iv); if (rec.state !== "inactive") rec.stop(); };
+    return await done;
+  } finally { await ctx.close(); }
+}
+// ---- decoder entry: any audio file the browser can decode (WAV, MP3, WebM/Opus, ...)
+async function amDecodeBuffer(ab, progress) {
+  const dv = new DataView(ab);
+  const rate = (ab.byteLength > 28 && dv.getUint32(0) === 0x52494646) ? clamp(dv.getUint32(24, true), 8000, 96000) : 48000;   // WAV: native rate, else 48 kHz
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: rate });
+  try { const b = await ctx.decodeAudioData(ab.slice(0)); return await amDemodulate(b.getChannelData(0), b.sampleRate, progress); }
+  finally { await ctx.close(); }
+}
+// ---- settings
+const AUD_PROFILES = {
+  wavmax:   { fmt: "wav",  rate: 57600, baud: 19200, f0: 9600, df: 9600, bps: 1, kbps: 128 },
+  mp3fast:  { fmt: "mp3",  rate: 44100, baud: 4800,  f0: 4800, df: 4800, bps: 1, kbps: 128 },
+  mp3small: { fmt: "mp3",  rate: 44100, baud: 2400,  f0: 2400, df: 2400, bps: 1, kbps: 80 },
+  opus:     { fmt: "webm", rate: 48000, baud: 1200,  f0: 600,  df: 1800, bps: 1, kbps: 48 },
+  robust:   { fmt: "webm", rate: 48000, baud: 600,   f0: 1200, df: 1200, bps: 1, kbps: 48 }
+};
+const AUD_IDS = { aFormat: "fmt", aRate: "rate", aBaud: "baud", aF0: "f0", aDf: "df", aBps: "bps", aKbps: "kbps", aAmp: "amp", aGrid: "grid", aK: "K", aM: "M" };
+function audSet() {
+  const n = (id, a, b, d) => clamp(parseFloat($(id).value) || d, a, b);
+  const [c, r] = $("aGrid").value.split("x").map(Number);
+  return { fmt: $("aFormat").value, rate: parseInt($("aRate").value), baud: n("aBaud", 50, 48000, 1200), f0: n("aF0", 50, 40000, 600), df: n("aDf", 50, 40000, 1200),
+    bps: parseInt($("aBps").value), kbps: n("aKbps", 8, 320, 64), amp: n("aAmp", 5, 95, 50) / 100, K: n("aK", 1, 64, 8), M: n("aM", 1, 8, 2), grid: c + "x" + r, cols: c, rows: r };
+}
+function audInfo() {
+  const s = audSet(), f = makeFormat(s.cols, s.rows, s.K, s.M), rate = s.fmt === "webm" ? 48000 : s.rate;
+  const top = s.f0 + ((1 << s.bps) - 1) * s.df, net = s.baud * s.bps / 8 * (f.pay / f.nbytes) * (f.K / f.S);
+  let t = "Raw " + (s.baud * s.bps) + " bit/s, net about " + net.toFixed(0) + " byte/s (1 MB takes " + (1048576 / net / 60).toFixed(1) + " min). Tones " + s.f0 + " to " + top + " Hz.";
+  if (top > rate * 0.45) t += " Too high for " + rate + " Hz sample rate!";
+  else if (s.fmt !== "wav" && top > 3500 && s.kbps < 64) t += " High tones need a higher codec bitrate.";
+  $("aInfo").textContent = t; $("aInfo").className = top > rate * 0.45 ? "hint bad" : "hint";
+}
+function audSave() { const s = audSet(), o = {}; for (const [id, k] of Object.entries(AUD_IDS)) o[k] = $(id).value; o.amp = $("aAmp").value; o.prof = $("aProf").value; store.set("aud", o); }
+function audApply(p) { for (const [id, k] of Object.entries(AUD_IDS)) if (p[k] !== undefined) $(id).value = p[k]; }
+$("aProf").onchange = () => { const p = AUD_PROFILES[$("aProf").value]; if (p) audApply(p); audInfo(); audSave(); };
+for (const id of Object.keys(AUD_IDS)) $(id).onchange = $(id).oninput = () => { $("aProf").value = "custom"; audInfo(); audSave(); };
+{
+  const o = store.get("aud", null);
+  if (o) { audApply(o); if (o.prof) $("aProf").value = o.prof; } else { $("aProf").value = "opus"; audApply(AUD_PROFILES.opus); $("aGrid").value = "96x54"; $("aK").value = 8; $("aM").value = 2; $("aAmp").value = 50; }
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) { if ($("aFormat").value === "webm") { $("aFormat").value = "wav"; $("aProf").value = "wavmax"; audApply(AUD_PROFILES.wavmax); } }
+  audInfo();
+}
+// ---- create / receive
+let audioTxBlob = null, audioRxBlob = null, audioTxName = "brainvc-audio.wav", audioRxName = "brainvc-restored.bin";
+const aSet = (id, msg, kind) => { $(id).textContent = msg; $(id).className = kind || "dim"; };
+$("aMake").onclick = async () => {
+  const file = $("aSendFile").files[0]; if (!file) { aSet("aSendStatus", "Choose a file first.", "bad"); return; }
+  const s = audSet(), f = makeFormat(s.cols, s.rows, s.K, s.M), p = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps }, rate = s.fmt === "webm" ? 48000 : s.rate;
+  const bar = pct => { $("aBar").style.width = pct.toFixed(1) + "%"; };
+  $("aMake").disabled = true; $("aDownload").disabled = true; audioTxBlob = null; bar(0);
+  try {
+    aSet("aSendStatus", "Modulating ..."); await tick();
+    const data = new Uint8Array(await file.arrayBuffer()), t = amModulate(data, f, p, rate, s.amp);
+    aSet("aSendStatus", s.fmt === "webm" ? "Encoding WebM/Opus in real time (about " + (t.pcm.length / rate / 60).toFixed(1) + " min) ..." : "Encoding " + s.fmt.toUpperCase() + " ...");
+    audioTxBlob = s.fmt === "wav" ? amMakeWav(t.pcm, rate) : s.fmt === "mp3" ? await amMakeMp3(t.pcm, rate, s.kbps, bar) : await amMakeWebm(t.pcm, s.kbps, bar);
+    audioTxName = file.name.replace(/\.[^.]*$/, "") + "-brainvc." + (s.fmt === "webm" ? "webm" : s.fmt);
+    $("aDownload").disabled = false; bar(100);
+    const info = s.fmt.toUpperCase() + " ready: " + (audioTxBlob.size / 1048576).toFixed(2) + " MB, " + (t.pcm.length / rate / 60).toFixed(1) + " min playing time.";
+    aSet("aSendStatus", info, "ok");
+    if ($("aVerify").checked && s.fmt !== "wav") {                       // decode it again exactly like the receiver would
+      aSet("aSendStatus", info + " Verifying ...", "ok"); await tick();
+      try {
+        const r = await amDecodeBuffer(await audioTxBlob.arrayBuffer(), x => bar(x));
+        const same = r.bytes.length === data.length && r.bytes.every((b, i) => b === data[i]);
+        aSet("aSendStatus", info + (same ? " Verified: decodes bit-exact (" + r.bad + " damaged frames, all rebuilt)." : " Verify: decoded, but the content differs!"), same ? "ok" : "bad");
+      } catch (e) { aSet("aSendStatus", info + " VERIFY FAILED: " + e.message, "bad"); }
+      bar(100);
+    }
+  } catch (e) { aSet("aSendStatus", "Could not create audio: " + e.message, "bad"); }
+  finally { $("aMake").disabled = false; }
+};
+const aSave = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000); };
+$("aDownload").onclick = () => { if (audioTxBlob) aSave(audioTxBlob, audioTxName); };
+$("aReceiveFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return; audioRxBlob = null; $("aRxDownload").disabled = true; $("aRxBar").style.width = "0%"; aSet("aRxStatus", "Decoding audio ...");
+  try {
+    const r = await amDecodeBuffer(await f.arrayBuffer(), pct => { $("aRxBar").style.width = pct.toFixed(1) + "%"; aSet("aRxStatus", "Demodulating ... " + Math.round(pct) + " %"); });
+    const info = sniff(r.bytes); audioRxBlob = new Blob([r.bytes], { type: info.mime }); audioRxName = "brainvc-restored." + info.ext;
+    $("aRxDownload").disabled = false; $("aRxBar").style.width = "100%";
+    aSet("aRxStatus", "Done: " + r.L.toLocaleString() + " bytes (" + info.ext + "), " + r.p.baud + " baud, " + (1 << r.p.bps) + " tones. " + r.bad + " damaged frame(s), " + r.fixed + " rebuilt by Reed-Solomon.", "ok");
+  } catch (err) { aSet("aRxStatus", err.message, "bad"); }
+};
+$("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxName); };
 
 // ---- start
 applyFormat();
