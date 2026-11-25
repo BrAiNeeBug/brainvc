@@ -18,7 +18,7 @@
 - **Encode** a file into pixel frames (header, CRC16, Reed-Solomon error correction)
 - **Show** the frames on a screen or **export** them as a video file
 - **Scan** them back live from a screen, a video file or a camera
-- **A-Link** – the same frames as sound: create **WAV, MP3 or WebM/Opus** files and read them back (experimental, see [A-Link](#-a-link-acoustic-data-link))
+- **A-Link** – the same frames as sound: create **WAV, MP3 or WebM/Opus** files and read them back
 - **Small videos** – the Auto bitrate adapts to the data rate, so video files stay small
 - **Big files** – 32-bit frame counters, no more 65 535-frame limit
 
