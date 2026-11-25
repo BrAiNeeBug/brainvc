@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BrAiNVC v5.3 web</title>
+<title>BrAiNVC web</title>
+<script>
+const APP_VERSION = "5.4";   // <- the only place to change the version number
+document.title = "BrAiNVC v" + APP_VERSION + " web";
+document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-ver]").forEach(e => { e.textContent = "v" + APP_VERSION; }));
+</script>
 <style>
 :root{--bg:#0e1014;--panel:#15181e;--panel2:#1b1f27;--line:#272c36;--txt:#e8eaee;--dim:#8b94a3;--acc:#4cc2ff;--ok:#4cd98a;--bad:#ff6b6b}
 *{box-sizing:border-box}
@@ -97,21 +102,39 @@ a.link{color:var(--acc)}
 footer.note{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px}
 footer.note b{color:#ffb454}
 code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px}
+/* ---- movable / resizable boxes (Layout button in the header) */
+header{z-index:900}
+.lay{position:relative;max-width:100%}
+.lay:has(>[data-blk][hidden]){display:none}
+.lay.ws>[data-blk]{width:100%;max-width:none}
+.lay.hs{margin-bottom:14px}
+.lay.hs>[data-blk]{height:100%;overflow:auto;margin-bottom:0}
+.lay.ws #tc{width:100%}
+#tcWrap:fullscreen{transform:none!important}
+.lay-grip,.lay-rs{display:none}
+.lay-edit .lay{outline:1px dashed var(--acc);outline-offset:3px;cursor:move;user-select:none;-webkit-user-select:none;touch-action:none}
+.lay-edit .lay>[data-blk]{pointer-events:none}
+.lay-edit .lay-grip{display:block;position:absolute;top:-12px;left:10px;z-index:3;background:var(--acc);color:#04202e;font-size:11px;font-weight:600;line-height:20px;padding:0 8px;border-radius:6px;pointer-events:none;white-space:nowrap}
+.lay-edit .lay-rs{display:block;position:absolute;right:-7px;bottom:-7px;width:20px;height:20px;border-radius:6px;background:var(--acc);cursor:nwse-resize;z-index:3;touch-action:none}
+.lay-edit .lay.wonly .lay-rs{cursor:ew-resize}
+#bLayout.on{background:var(--acc);color:#04202e;border-color:var(--acc);font-weight:600}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo">Br<b>AiN</b>VC<em class="ver">v5.3</em><span>optical data link &middot; web edition</span></div>
+  <div class="logo">Br<b>AiN</b>VC<em class="ver" data-ver></em><span>optical data link &middot; web edition</span></div>
   <nav class="seg">
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
     <button id="tabAudio">A-Link</button>
     <button id="tabAbout">About</button>
   </nav>
+  <button id="bLayout" title="Move and resize the boxes: drag a box to move it, drag its corner to resize it">Layout</button>
+  <button id="bLayReset" hidden title="Put every box back to its original place and size">Reset layout</button>
 </header>
 <main>
 
-<details class="panel" id="fmtBox">
+<details class="panel" id="fmtBox" data-blk="fmt" data-lay="w">
   <summary>Format <span>&middot; sender and receiver must use the same values</span></summary>
   <div class="panel-row">
     <div class="field"><span class="cap">Grid (cells)</span>
@@ -125,7 +148,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 
 <!-- ============================ RECEIVE ============================ -->
 <section id="rx">
-  <div class="panel">
+  <div class="panel" data-blk="rx-src">
     <div class="panel-row">
       <div class="field"><span class="cap">Source</span>
         <div class="seg">
@@ -164,8 +187,8 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <div class="hint" id="fileHint"></div>
   </div>
 
-  <div class="stage"><video id="vid" playsinline muted></video><canvas id="ov"></canvas></div>
-  <div class="toolbar">
+  <div class="stage" data-blk="rx-stage" data-lay="w"><video id="vid" playsinline muted></video><canvas id="ov"></canvas></div>
+  <div class="toolbar" data-blk="rx-tools" data-lay="w">
     <button id="bRot" title="Rotate which corner is the top-left of the code">&#8635; Rotate</button>
     <button id="bMir" title="Mirror horizontally (e.g. selfie camera)">&#8596; Mirror</button>
     <button id="bRst">Reset corners</button>
@@ -173,7 +196,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <span class="hint" style="margin:0">By default the whole video frame is read. Drag the corners only if the code sits in a smaller area (TL = top-left of the code).</span>
   </div>
 
-  <div class="grid2">
+  <div class="grid2" data-blk="rx-scan">
     <div>
       <div class="cap" style="margin-bottom:6px">What the scanner sees</div>
       <canvas id="pv" class="pv" width="128" height="72"></canvas>
@@ -181,9 +204,9 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     </div>
     <div class="stats" id="stats"></div>
   </div>
-  <div class="bar"><i id="barG"></i></div>
+  <div class="bar" data-blk="rx-bar" data-lay="w"><i id="barG"></i></div>
 
-  <div class="panel">
+  <div class="panel" data-blk="rx-player">
     <audio id="aud" controls></audio>
     <div class="btnrow" style="margin-top:12px">
       <button id="bPartial" disabled>Save partial</button>
@@ -198,7 +221,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 
 <!-- ============================== SEND ============================== -->
 <section id="tx" hidden>
-  <div class="panel">
+  <div class="panel" data-blk="tx-main">
     <div class="panel-row">
       <div class="field grow"><span class="cap">File to send</span><input id="sfile" type="file"></div>
       <div class="field"><span class="cap">Send via</span>
@@ -224,10 +247,10 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     </div>
     <div class="infoline" id="txInfo">Choose a file to send.</div>
     <div class="hint sonly">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it. Pick a speed that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
-    <div class="hint vonly" hidden>Creates an MP4 (H.264) or WebM, ready for YouTube or for decoding later, encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Speed is at most half of the video frame rate. Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
+    <div class="hint vonly" hidden>Creates an MP4 (H.264) or WebM, ready for YouTube or for decoding later, encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Speed can be as high as the video frame rate (up to 30). Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
   </div>
-  <div id="tcWrap" class="sonly"><canvas id="tc" width="128" height="72"></canvas></div>
-  <div class="panel vonly" hidden>
+  <div id="tcWrap" class="sonly" data-blk="tx-code" data-lay="w"><canvas id="tc" width="128" height="72"></canvas></div>
+  <div class="panel vonly" hidden data-blk="tx-video">
     <div class="bar" style="margin-top:0"><i id="barV"></i></div>
     <div id="vStatus" class="dim">Choose a file above, then press Create video.</div>
     <div class="btnrow" style="margin-top:10px"><button id="bVDl" class="primary" disabled>Download video</button></div>
@@ -237,7 +260,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 
 <!-- ============================== AUDIO ============================== -->
 <section id="audio" hidden>
-  <div class="panel">
+  <div class="panel" data-blk="a-make">
     <p class="dim" style="margin:0 0 12px">Experimental acoustic data link: a file becomes FSK tones in a WAV, MP3 or WebM/Opus file. The receiver reads all settings from the file itself.</p>
     <div class="panel-row">
       <div class="field grow"><span class="cap">File to send</span><input id="aSendFile" type="file"></div>
@@ -248,7 +271,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <div id="aSendStatus" class="dim">Choose a file to create an audio transmission.</div>
     <div class="btnrow" style="margin-top:10px"><button id="aDownload" class="primary" disabled>Download audio</button></div>
   </div>
-  <details class="panel" id="aSetBox" open>
+  <details class="panel" id="aSetBox" open data-blk="a-set" data-lay="w">
     <summary>A-Link settings <span>&middot; only the sender needs them</span></summary>
     <div class="panel-row">
       <div class="field"><span class="cap">Profile</span><select id="aProf"><option value="wavmax">WAV max (lossless)</option><option value="mp3fast">MP3 fast (128 kbit/s)</option><option value="mp3small">MP3 small (80 kbit/s)</option><option value="opus">WebM/Opus (48 kbit/s)</option><option value="robust">Robust (WebM/MP3, slow)</option><option value="custom">Custom</option></select></div>
@@ -264,7 +287,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
     <div class="hint" id="aInfo"></div>
     <div class="hint">Lossy codecs lose high tones: Opus below 64 kbit/s keeps roughly 3 kHz, MP3 needs about 96 kbit/s for 4800 baud. Frame size, K and M come from the Format panel above; smaller frames lose less when a codec damages one. &quot;Verify&quot; decodes the finished MP3/WebM again, so you know at once whether the settings survive.</div>
   </details>
-  <div class="panel">
+  <div class="panel" data-blk="a-recv">
     <h3 style="margin:0 0 8px">Receive</h3>
     <div class="field"><span class="cap">A-Link audio file (WAV, MP3 or WebM/Opus)</span><input id="aReceiveFile" type="file" accept="audio/*,.wav,.mp3,.webm,.ogg,.opus"></div>
     <div class="bar"><i id="aRxBar"></i></div>
@@ -279,7 +302,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 <!-- ============================== ABOUT ============================== -->
 <section id="about" class="about" hidden>
   <div class="panel">
-    <h2>BrAiNVC v5.3 &middot; optical + experimental acoustic (A-Link) data link</h2>
+    <h2>BrAiNVC <span data-ver></span> &middot; optical + experimental acoustic (A-Link) data link</h2>
     <p>Encoder and scanner for an optical data link: a file becomes a stream of pixel frames (header, CRC16, Reed-Solomon error correction),
     which can be shown on a screen, put into a video, and read back from a screen, a video file or a camera.
     Note: v5 is not backward compatible &ndash; videos made with v4 or older versions cannot be read, and v5 videos cannot be read by them.</p>
@@ -319,7 +342,7 @@ code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;pad
 </section>
 
 <footer class="note">
-  <b>BrAiNVC v5.3 &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
+  <b>BrAiNVC <span data-ver></span> &middot; Experimental &middot; provided AS IS &middot; private, non-commercial use only.</b>
   Not a secure communication system. <a href="#" class="link" id="lnkAbout">Read the full disclaimer</a> &middot;
   <a class="link" href="https://github.com/BrAiNeeBug/brainvc" target="_blank" rel="noopener noreferrer">GitHub</a>
 </footer>
@@ -822,7 +845,7 @@ function applyFormat() {
   pv.width = c; pv.height = r;
   samplerDirty = true; tpls = beaconTemplates(fmt); beaconCache = {};
   resetReceiver();
-  enc = null; haltSend(); updateTxButtons();
+  rebuildEnc();
   if (typeof audInfo === "function") audInfo();
 }
 const pv = $("pv"), pvCtx = pv.getContext("2d");
@@ -1328,7 +1351,7 @@ $("numPre").onchange = () => { store.set("pre", $("numPre").value); };
 
 // =========================================================== SEND
 const tc = $("tc"), tctx = tc.getContext("2d");
-let enc = null, sendRun = false, t0 = 0, lastIdx = -1, beaconMs = 0, introMs = 0, lastIntro = "", beaconCache = {};
+let enc = null, sendData = null, sendRun = false, t0 = 0, lastIdx = -1, beaconMs = 0, introMs = 0, lastIntro = "", beaconCache = {};
 function updateTxButtons() {
   if (typeof updateVideoUi === "function") updateVideoUi();
   $("bStart").disabled = !enc || sendRun;
@@ -1337,12 +1360,20 @@ function updateTxButtons() {
 }
 $("sfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  const data = new Uint8Array(await f.arrayBuffer());
-  const en = new Encoder(fmt, data);
-  if (en.L > 0xFFFFFFFF || en.N > 0xFFFFFFFF) { $("txInfo").textContent = "File too large for this format (" + en.N + " frames, max 4294967295)."; return; }
-  enc = en; haltSend(); updateTxInfo(0, 0); updateTxButtons();
-  drawTxFrame(0);
+  sendData = new Uint8Array(await f.arrayBuffer());
+  rebuildEnc();
 };
+// (re)build the encoder from the chosen file with the current format; also called when Grid / K / M change
+function rebuildEnc() {
+  haltSend(); enc = null;
+  if (sendData) {
+    mkResult = null;                                   // a video made with the old format would not match anymore
+    const en = new Encoder(fmt, sendData);
+    if (en.L > 0xFFFFFFFF || en.N > 0xFFFFFFFF) $("txInfo").textContent = "File too large for this format (" + en.N + " frames, max 4294967295).";
+    else { enc = en; updateTxInfo(0, 0); drawTxFrame(0); vSet("Ready, press Create video."); }
+  }
+  updateTxButtons();
+}
 function updateTxInfo(n, pass) {
   if (!enc) return;
   const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
@@ -1394,7 +1425,7 @@ $("bStart").onclick = () => {
 function haltSend() { sendRun = false; updateTxButtons(); }
 $("bHalt").onclick = haltSend;
 $("bFull").onclick = () => { const w = $("tcWrap"); (w.requestFullscreen || w.webkitRequestFullscreen).call(w); };
-$("numFps").onchange = () => { store.set("fps", $("numFps").value); };
+$("numFps").onchange = () => { store.set("fps", $("numFps").value); if (enc && !sendRun) updateTxInfo(0, 0); };
 $("numBeacon").onchange = () => { store.set("beacon", $("numBeacon").value); };
 { const v = store.get("beacon", null); if (v !== null) $("numBeacon").value = v; }
 { const v = store.get("fps", null); if (v) $("numFps").value = v; }
@@ -1453,7 +1484,7 @@ async function createVideo() {
     vSet("This browser cannot encode video (WebCodecs missing). Use Chrome, Edge, Opera, Firefox 130+ or Safari 16.4+.", "bad"); return;
   }
   const vfps = parseInt($("selVFps").value) || 60;
-  const dfps = clamp(parseFloat($("numFps").value) || 10, 1, vfps / 2);
+  const dfps = clamp(parseFloat($("numFps").value) || 10, 1, vfps);
   const passes = clamp(parseInt($("numVPass").value) || 2, 1, 5);
   const brSel = $("selVBr").value;
   const bitrate = brSel === "auto" ? autoBitrate(dfps) : (parseFloat(brSel) || 8) * 1e6;
@@ -1826,6 +1857,60 @@ $("aReceiveFile").onchange = async e => {
   } catch (err) { aSet("aRxStatus", err.message, "bad"); }
 };
 $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxName); };
+
+// ===== LAYOUT EDITOR: move and resize the boxes (saved in this browser) =====
+(function () {
+  const NAMES = { fmt: "Format", "rx-src": "Source", "rx-stage": "Video", "rx-tools": "Tools", "rx-scan": "Scanner", "rx-bar": "Progress", "rx-player": "Player",
+    "tx-main": "Send", "tx-code": "Code", "tx-video": "Video export", "a-make": "Create audio", "a-set": "A-Link settings", "a-recv": "Receive audio" };
+  let st = store.get("layout", {}) || {}, zTop = 1;
+  const wraps = [];
+  function apply(w) {
+    const s = st[w.dataset.id] || {};
+    w.style.transform = (s.x || s.y) ? "translate(" + (s.x || 0) + "px," + (s.y || 0) + "px)" : "";
+    w.style.width = s.w ? s.w + "px" : "";
+    w.style.height = s.h ? s.h + "px" : "";
+    w.classList.toggle("ws", !!s.w); w.classList.toggle("hs", !!s.h);
+  }
+  document.querySelectorAll("[data-blk]").forEach(el => {
+    const id = el.dataset.blk, wOnly = el.dataset.lay === "w";
+    const w = document.createElement("div");
+    w.className = "lay" + (wOnly ? " wonly" : ""); w.dataset.id = id;
+    el.parentNode.insertBefore(w, el); w.appendChild(el);
+    const g = document.createElement("div"); g.className = "lay-grip"; g.textContent = "\u2725 " + (NAMES[id] || id);
+    const rs = document.createElement("div"); rs.className = "lay-rs";
+    w.appendChild(g); w.appendChild(rs);
+    apply(w); wraps.push(w);
+    w.addEventListener("pointerdown", e => {
+      if (!document.body.classList.contains("lay-edit") || e.button > 0) return;
+      e.preventDefault();
+      const resize = e.target === rs, s0 = Object.assign({}, st[id] || {});
+      const r = w.getBoundingClientRect(), sy = window.scrollY;
+      const baseL = r.left - (s0.x || 0), baseT = r.top + sy - (s0.y || 0);
+      const x0 = e.clientX, y0 = e.clientY;
+      w.style.zIndex = ++zTop;
+      w.setPointerCapture(e.pointerId);
+      const mv = ev => {
+        const dx = ev.clientX - x0, dy = ev.clientY - y0, s = st[id] = Object.assign({}, st[id]);
+        if (resize) {
+          s.w = Math.round(Math.max(160, r.width + dx));
+          if (!wOnly) s.h = Math.round(Math.max(60, r.height + dy));
+        } else {
+          const L = Math.min(Math.max(baseL + (s0.x || 0) + dx, 4), Math.max(4, window.innerWidth - r.width - 4));
+          const T = Math.max(baseT + (s0.y || 0) + dy, 0);
+          s.x = Math.round(L - baseL); s.y = Math.round(T - baseT);
+        }
+        apply(w);
+      };
+      const up = () => { w.removeEventListener("pointermove", mv); w.removeEventListener("pointerup", up); w.removeEventListener("pointercancel", up); store.set("layout", st); };
+      w.addEventListener("pointermove", mv); w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up);
+    });
+  });
+  $("bLayout").onclick = () => {
+    const on = document.body.classList.toggle("lay-edit");
+    $("bLayout").classList.toggle("on", on); $("bLayout").textContent = on ? "Done" : "Layout"; $("bLayReset").hidden = !on;
+  };
+  $("bLayReset").onclick = () => { st = {}; store.set("layout", st); wraps.forEach(w => { apply(w); w.style.zIndex = ""; }); };
+})();
 
 // ---- start
 applyFormat();
