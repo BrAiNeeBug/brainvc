@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrAiNVC web</title>
 <script>
-const APP_VERSION = "5.4";   // <- the only place to change the version number
+const APP_VERSION = "5.5";   // <- the only place to change the version number
 document.title = "BrAiNVC v" + APP_VERSION + " web";
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-ver]").forEach(e => { e.textContent = "v" + APP_VERSION; }));
 </script>
@@ -104,15 +104,20 @@ footer.note b{color:#ffb454}
 code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px}
 /* ---- movable / resizable boxes (Layout button in the header) */
 header{z-index:900}
+section{position:relative}
+.stage:not(.live){aspect-ratio:16/9}
 .lay{position:relative;max-width:100%}
+.lay.abs{position:absolute;max-width:none}
+.lay.abs>[data-blk]{margin:0}
 .lay:has(>[data-blk][hidden]){display:none}
-.lay.ws>[data-blk]{width:100%;max-width:none}
-.lay.hs{margin-bottom:14px}
-.lay.hs>[data-blk]{height:100%;overflow:auto;margin-bottom:0}
-.lay.ws #tc{width:100%}
+.lay.ur>[data-blk]{width:100%;max-width:none}
+.lay.hu:not(.abs){margin-bottom:14px}
+.lay.hu>[data-blk]{height:100%;overflow:auto;margin-bottom:0}
+.lay.ur #tc{width:100%}
 #tcWrap:fullscreen{transform:none!important}
 .lay-grip,.lay-rs{display:none}
 .lay-edit .lay{outline:1px dashed var(--acc);outline-offset:3px;cursor:move;user-select:none;-webkit-user-select:none;touch-action:none}
+.lay-edit .lay.abs{min-height:40px}
 .lay-edit .lay>[data-blk]{pointer-events:none}
 .lay-edit .lay-grip{display:block;position:absolute;top:-12px;left:10px;z-index:3;background:var(--acc);color:#04202e;font-size:11px;font-weight:600;line-height:20px;padding:0 8px;border-radius:6px;pointer-events:none;white-space:nowrap}
 .lay-edit .lay-rs{display:block;position:absolute;right:-7px;bottom:-7px;width:20px;height:20px;border-radius:6px;background:var(--acc);cursor:nwse-resize;z-index:3;touch-action:none}
@@ -196,13 +201,13 @@ header{z-index:900}
     <span class="hint" style="margin:0">By default the whole video frame is read. Drag the corners only if the code sits in a smaller area (TL = top-left of the code).</span>
   </div>
 
-  <div class="grid2" data-blk="rx-scan">
-    <div>
+  <div class="grid2">
+    <div data-blk="rx-view">
       <div class="cap" style="margin-bottom:6px">What the scanner sees</div>
       <canvas id="pv" class="pv" width="128" height="72"></canvas>
       <div id="beacon" class="dim" style="margin-top:6px;min-height:20px;font-size:12.5px"></div>
     </div>
-    <div class="stats" id="stats"></div>
+    <div class="stats" id="stats" data-blk="rx-stats"></div>
   </div>
   <div class="bar" data-blk="rx-bar" data-lay="w"><i id="barG"></i></div>
 
@@ -213,9 +218,9 @@ header{z-index:900}
       <button id="bDl" class="primary" disabled>Download</button>
       <button id="bReset">Reset</button>
     </div>
-    <div id="status" class="dim"></div>
   </div>
-  <div class="hint">Tips: with a camera keep the code big and the phone steady, use a low data rate (about 5&ndash;8 frames/s) and avoid reflections.
+  <div class="panel" data-blk="rx-status"><div id="status" class="dim" style="margin:0">&nbsp;</div></div>
+  <div class="hint" data-blk="rx-tip" data-lay="w">Tips: with a camera keep the code big and the phone steady, use a low data rate (about 5&ndash;8 frames/s) and avoid reflections.
   Live play works for MP3 and WebM/Opus streams; other files are saved and, if they are audio, played after the transfer completes.</div>
 </section>
 
@@ -226,19 +231,19 @@ header{z-index:900}
       <div class="field grow"><span class="cap">File to send</span><input id="sfile" type="file"></div>
       <div class="field"><span class="cap">Send via</span>
         <div class="seg">
-          <label><input type="radio" name="txmode" value="screen" checked><span>Screen</span></label>
-          <label><input type="radio" name="txmode" value="video"><span>Video file</span></label>
+          <label><input type="radio" name="txmode" value="video" checked><span>Video file</span></label>
+		  <label><input type="radio" name="txmode" value="screen"><span>Screen</span></label>
         </div>
       </div>
     </div>
     <div class="panel-row" style="margin-top:14px">
-      <div class="field"><span class="cap">Speed (frames/s)</span><input id="numFps" type="number" min="1" max="60" value="16"></div>
-      <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="5"></div>
+      <div class="field"><span class="cap">Speed (frames/s)</span><input id="numFps" type="number" min="1" max="60" value="15"></div>
+      <div class="field"><span class="cap">Beacon (s, 0 = off)</span><input id="numBeacon" type="number" min="0" max="30" value="3"></div>
       <div class="field vonly" hidden><span class="cap">Video frame rate</span>
-        <select id="selVFps"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
+        <select id="selVFps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></div>
       <div class="field vonly" hidden><span class="cap">File repeats</span><input id="numVPass" type="number" min="1" max="5" value="1"></div>
       <div class="field vonly" hidden><span class="cap">Quality</span>
-        <select id="selVBr"><option value="auto" selected>Auto (small file)</option><option value="2">Tiny (2 Mbit/s)</option><option value="4">Small (4 Mbit/s)</option><option value="8">Normal (8 Mbit/s)</option><option value="16">High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
+        <select id="selVBr"><option value="auto">Auto (small file)</option><option value="2" selected>Tiny (2 Mbit/s)</option><option value="4">Small (4 Mbit/s)</option><option value="8">Normal (8 Mbit/s)</option><option value="16">High (16 Mbit/s)</option><option value="32">Maximum (32 Mbit/s)</option></select></div>
       <div class="field grow"></div>
       <div class="field"><span class="cap">&nbsp;</span>
         <div class="btnrow sonly"><button id="bStart" class="primary" disabled>Start</button><button id="bHalt" disabled>Stop</button><button id="bFull" disabled>Fullscreen</button></div>
@@ -255,7 +260,7 @@ header{z-index:900}
     <div id="vStatus" class="dim">Choose a file above, then press Create video.</div>
     <div class="btnrow" style="margin-top:10px"><button id="bVDl" class="primary" disabled>Download video</button></div>
   </div>
-  <div class="hint">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.</div>
+  <div class="hint" data-blk="tx-tip" data-lay="w">Tip: low bitrate music works best, e.g. <code>ffmpeg -i in.mp3 -c:a libopus -b:a 16k out.webm</code> or an MP3 at 32&ndash;64 kbit/s.</div>
 </section>
 
 <!-- ============================== AUDIO ============================== -->
@@ -294,7 +299,7 @@ header{z-index:900}
     <div id="aRxStatus" class="dim">Select an audio file created by A-Link.</div>
     <div class="btnrow" style="margin-top:10px"><button id="aRxDownload" class="primary" disabled>Download restored file</button></div>
   </div>
-  <div class="panel hint">
+  <div class="panel hint" data-blk="a-how">
     <b>How it works:</b> a fixed 1200 baud preamble (sync word plus all settings) leads into the data tones, so the receiver finds the start and the settings on its own, even after the codec delays the signal. Frames use the same CRC16 and Reed-Solomon recovery as the optical link. WebM/Opus is recorded in real time by the browser (as long as the playing time); WAV and MP3 are created faster than real time. MP3 encoding loads the lamejs library from a CDN once.
   </div>
 </section>
@@ -1812,7 +1817,7 @@ $("aProf").onchange = () => { const p = AUD_PROFILES[$("aProf").value]; if (p) a
 for (const id of Object.keys(AUD_IDS)) $(id).onchange = $(id).oninput = () => { $("aProf").value = "custom"; audInfo(); audSave(); };
 {
   const o = store.get("aud", null);
-  if (o) { audApply(o); if (o.prof) $("aProf").value = o.prof; } else { $("aProf").value = "opus"; audApply(AUD_PROFILES.opus); $("aAmp").value = 50; }
+  if (o) { audApply(o); if (o.prof) $("aProf").value = o.prof; } else { $("aProf").value = "wavmax"; audApply(AUD_PROFILES.wavmax); $("aAmp").value = 50; }
   if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) { if ($("aFormat").value === "webm") { $("aFormat").value = "wav"; $("aProf").value = "wavmax"; audApply(AUD_PROFILES.wavmax); } }
   audInfo();
 }
@@ -1859,18 +1864,77 @@ $("aReceiveFile").onchange = async e => {
 $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxName); };
 
 // ===== LAYOUT EDITOR: move and resize the boxes (saved in this browser) =====
+// Inside a tab (Receive / Send / A-Link) the first move "freezes" the whole tab: every box gets a fixed
+// position, so nothing jumps around any more when the video window, a status text or a field changes size.
 (function () {
-  const NAMES = { fmt: "Format", "rx-src": "Source", "rx-stage": "Video", "rx-tools": "Tools", "rx-scan": "Scanner", "rx-bar": "Progress", "rx-player": "Player",
-    "tx-main": "Send", "tx-code": "Code", "tx-video": "Video export", "a-make": "Create audio", "a-set": "A-Link settings", "a-recv": "Receive audio" };
-  let st = store.get("layout", {}) || {}, zTop = 1;
+  const NAMES = { fmt: "Format", "rx-src": "Source", "rx-stage": "Video", "rx-tools": "Tools", "rx-view": "Scanner view", "rx-stats": "Stats", "rx-bar": "Progress",
+    "rx-player": "Player", "rx-status": "Status", "rx-tip": "Tips", "tx-main": "Send", "tx-code": "Code", "tx-video": "Video export", "tx-tip": "Tip",
+    "a-make": "Create audio", "a-set": "A-Link settings", "a-recv": "Receive audio", "a-how": "How it works" };
+  try { localStorage.removeItem("bvc_layout"); } catch (e) {}          // old format (offsets), no longer valid
+  let st = store.get("layout2", null);
+  if (!st || typeof st !== "object") st = {};
+  st.t = st.t || {}; st.s = st.s || {};                                  // t: boxes outside the tabs, s: per tab
+  let zTop = 1;
+  const fresh = new Set(), touched = new Set();               // tabs frozen / changed during this edit session
   const wraps = [];
+  const secOf = w => w.closest("section");
+  const save = () => store.set("layout2", st);
+  const hiddenNow = w => !w.offsetWidth && !w.offsetHeight;
+
   function apply(w) {
-    const s = st[w.dataset.id] || {};
-    w.style.transform = (s.x || s.y) ? "translate(" + (s.x || 0) + "px," + (s.y || 0) + "px)" : "";
-    w.style.width = s.w ? s.w + "px" : "";
-    w.style.height = s.h ? s.h + "px" : "";
-    w.classList.toggle("ws", !!s.w); w.classList.toggle("hs", !!s.h);
+    const id = w.dataset.id, sec = secOf(w);
+    for (const k of ["left", "top", "width", "height", "transform"]) w.style[k] = "";
+    w.classList.remove("abs", "ur", "hu");
+    if (!sec) {
+      const s = st.t[id]; if (!s) return;
+      if (s.x || s.y) w.style.transform = "translate(" + (s.x || 0) + "px," + (s.y || 0) + "px)";
+      if (s.w) { w.style.width = s.w + "px"; w.classList.add("ur"); }
+      return;
+    }
+    const s = st.s[sec.id] && st.s[sec.id][id];
+    if (!s) return;
+    w.classList.add("abs");
+    w.style.left = s.x + "px"; w.style.top = s.y + "px"; w.style.width = s.w + "px";
+    if (s.h) { w.style.height = s.h + "px"; w.classList.add("hu"); }
+    if (s.u) w.classList.add("ur");
   }
+  // keep the tab tall enough for its (absolutely placed) boxes
+  function fitSec(sec) {
+    if (!st.s[sec.id]) { sec.style.minHeight = ""; return; }
+    let b = 0;
+    sec.querySelectorAll(".lay.abs").forEach(w => { b = Math.max(b, w.offsetTop + w.offsetHeight); });
+    sec.style.minHeight = (b + 24) + "px";
+  }
+  // first move in a tab: remember where every box is right now
+  function freeze(sec) {
+    if (st.s[sec.id]) return;
+    const sr = sec.getBoundingClientRect(), ss = {}, list = [...sec.querySelectorAll(".lay")];
+    for (const w of list) {
+      if (hiddenNow(w)) continue;                                        // not shown right now, placed when it appears
+      const r = w.getBoundingClientRect();
+      ss[w.dataset.id] = { x: Math.round(r.left - sr.left), y: Math.round(r.top - sr.top), w: Math.round(r.width) };
+    }
+    st.s[sec.id] = ss; fresh.add(sec.id);
+    list.forEach(apply); fitSec(sec); save();
+  }
+  // boxes that were hidden when the tab was frozen get a spot below the others when they show up
+  function freezeVisible() { document.querySelectorAll("section").forEach(sec => { if (!sec.hidden) freeze(sec); }); }
+  function fixAll() {
+    if (document.body.classList.contains("lay-edit")) freezeVisible();   // so every box can be grabbed while editing
+    document.querySelectorAll("section").forEach(sec => {
+      const ss = st.s[sec.id]; if (!ss || sec.hidden) return;
+      let changed = false;
+      sec.querySelectorAll(".lay").forEach(w => {
+        if (ss[w.dataset.id] || hiddenNow(w)) return;
+        let bottom = 0;
+        sec.querySelectorAll(".lay.abs").forEach(o => { bottom = Math.max(bottom, o.offsetTop + o.offsetHeight); });
+        ss[w.dataset.id] = { x: 0, y: bottom + 14, w: Math.round(sec.clientWidth) };
+        apply(w); changed = true;
+      });
+      fitSec(sec); if (changed) save();
+    });
+  }
+
   document.querySelectorAll("[data-blk]").forEach(el => {
     const id = el.dataset.blk, wOnly = el.dataset.lay === "w";
     const w = document.createElement("div");
@@ -1879,37 +1943,61 @@ $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxNa
     const g = document.createElement("div"); g.className = "lay-grip"; g.textContent = "\u2725 " + (NAMES[id] || id);
     const rs = document.createElement("div"); rs.className = "lay-rs";
     w.appendChild(g); w.appendChild(rs);
-    apply(w); wraps.push(w);
+    wraps.push(w);
     w.addEventListener("pointerdown", e => {
       if (!document.body.classList.contains("lay-edit") || e.button > 0) return;
       e.preventDefault();
-      const resize = e.target === rs, s0 = Object.assign({}, st[id] || {});
-      const r = w.getBoundingClientRect(), sy = window.scrollY;
+      const sec = secOf(w);
+      if (sec) { freeze(sec); touched.add(sec.id); }
+      const key = sec ? st.s[sec.id] : st.t, resize = e.target === rs;
+      const s0 = Object.assign({}, key[id] || {});
+      const r = w.getBoundingClientRect(), sr = sec ? sec.getBoundingClientRect() : null, sy = window.scrollY;
       const baseL = r.left - (s0.x || 0), baseT = r.top + sy - (s0.y || 0);
       const x0 = e.clientX, y0 = e.clientY;
       w.style.zIndex = ++zTop;
       w.setPointerCapture(e.pointerId);
       const mv = ev => {
-        const dx = ev.clientX - x0, dy = ev.clientY - y0, s = st[id] = Object.assign({}, st[id]);
+        const dx = ev.clientX - x0, dy = ev.clientY - y0, s = key[id] = Object.assign({}, key[id]);
         if (resize) {
-          s.w = Math.round(Math.max(160, r.width + dx));
+          s.w = Math.round(Math.max(160, r.width + dx)); s.u = 1;
           if (!wOnly) s.h = Math.round(Math.max(60, r.height + dy));
+        } else if (sec) {
+          const lo = 4 - sr.left, hi = Math.max(lo, window.innerWidth - 4 - sr.left - r.width);
+          s.x = Math.round(Math.min(Math.max((s0.x || 0) + dx, lo), hi));
+          s.y = Math.max(0, Math.round((s0.y || 0) + dy));
         } else {
           const L = Math.min(Math.max(baseL + (s0.x || 0) + dx, 4), Math.max(4, window.innerWidth - r.width - 4));
           const T = Math.max(baseT + (s0.y || 0) + dy, 0);
           s.x = Math.round(L - baseL); s.y = Math.round(T - baseT);
         }
-        apply(w);
+        apply(w); if (sec) fitSec(sec);
       };
-      const up = () => { w.removeEventListener("pointermove", mv); w.removeEventListener("pointerup", up); w.removeEventListener("pointercancel", up); store.set("layout", st); };
+      const up = () => { w.removeEventListener("pointermove", mv); w.removeEventListener("pointerup", up); w.removeEventListener("pointercancel", up); save(); };
       w.addEventListener("pointermove", mv); w.addEventListener("pointerup", up); w.addEventListener("pointercancel", up);
     });
   });
+  wraps.forEach(apply);
+  const ro = new ResizeObserver(es => { const secs = new Set(); es.forEach(e => { const sec = secOf(e.target); if (sec) secs.add(sec); }); secs.forEach(fitSec); });
+  wraps.forEach(w => ro.observe(w));
+  new MutationObserver(fixAll).observe(document.querySelector("main"), { attributes: true, subtree: true, attributeFilter: ["hidden"] });
+  fixAll();
+
   $("bLayout").onclick = () => {
     const on = document.body.classList.toggle("lay-edit");
     $("bLayout").classList.toggle("on", on); $("bLayout").textContent = on ? "Done" : "Layout"; $("bLayReset").hidden = !on;
+    if (on) { freezeVisible(); return; }
+    // leaving edit mode: tabs that were only looked at (nothing moved) go back to the normal flowing layout
+    for (const id of fresh) if (!touched.has(id)) {
+      delete st.s[id]; const sec = $(id); sec.querySelectorAll(".lay").forEach(apply); fitSec(sec);
+    }
+    fresh.clear(); touched.clear(); save();
   };
-  $("bLayReset").onclick = () => { st = {}; store.set("layout", st); wraps.forEach(w => { apply(w); w.style.zIndex = ""; }); };
+  $("bLayReset").onclick = () => {
+    st = { t: {}, s: {} }; save();
+    wraps.forEach(w => { apply(w); w.style.zIndex = ""; });
+    document.querySelectorAll("section").forEach(fitSec);
+    fresh.clear(); touched.clear(); freezeVisible();
+  };
 })();
 
 // ---- start
