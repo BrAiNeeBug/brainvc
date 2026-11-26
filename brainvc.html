@@ -146,7 +146,7 @@ section{position:relative}
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
-    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default">Reset to defaults</button></div>
+    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (your box layout is kept)">Reset settings</button></div>
   </div>
   <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
 </details>
@@ -341,8 +341,10 @@ section{position:relative}
   <div class="panel">
     <h2>Settings</h2>
     <p class="dim" style="margin-bottom:12px">Everything you set on this page is remembered in this browser. Reset brings back the defaults:
-    grid 192&times;108, K = 8, M = 2, 16 data frames/s, 5 s beacon, 60 fps video, 1 file repeat, Auto bitrate (plus: 10 s pre-buffer, Play file reading at 1&times;; A-Link settings: WebM/Opus profile).</p>
-    <button id="bResetAll2" class="danger">Reset all settings to defaults</button>
+    grid 192&times;108, K = 8, M = 2, 16 data frames/s, 5 s beacon, 60 fps video, 1 file repeat, Auto bitrate (plus: 10 s pre-buffer, Play file reading at 1&times;; A-Link settings: WAV max profile). Your box layout is not touched by this.</p>
+    <button id="bResetAll2" class="danger">Reset settings</button>
+    <p class="dim" style="margin:16px 0 12px">The layout (position and size of the boxes, see the Layout button) is reset separately and keeps all your settings.</p>
+    <button id="bResetLayout2" class="danger">Reset layout</button>
   </div>
 </section>
 
@@ -874,8 +876,8 @@ $("lnkAbout").onclick = e => { e.preventDefault(); showTab("about"); };
 
 // back to the defaults (grid 192x108, K 8, M 2, 16 frames/s, 5 s beacon, 10 s pre-buffer ...)
 function resetAll() {
-  if (!confirm("Reset all settings to their defaults?\n\nGrid, K/M, frame rate, beacon, pre-buffer, file mode and saved corners.\nThe page reloads.")) return;
-  try { Object.keys(localStorage).filter(k => k.startsWith("bvc_")).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  if (!confirm("Reset all settings to their defaults?\n\nGrid, K/M, frame rate, beacon, pre-buffer, file mode and saved corners.\nYour box layout is kept. The page reloads.")) return;
+  try { Object.keys(localStorage).filter(k => k.startsWith("bvc_") && k !== "bvc_layout2").forEach(k => localStorage.removeItem(k)); } catch (e) {}
   location.reload();
 }
 $("bResetAll").onclick = resetAll;
@@ -1992,12 +1994,15 @@ $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxNa
     }
     fresh.clear(); touched.clear(); save();
   };
-  $("bLayReset").onclick = () => {
+  function resetLayout() {
     st = { t: {}, s: {} }; save();
     wraps.forEach(w => { apply(w); w.style.zIndex = ""; });
     document.querySelectorAll("section").forEach(fitSec);
-    fresh.clear(); touched.clear(); freezeVisible();
-  };
+    fresh.clear(); touched.clear();
+    if (document.body.classList.contains("lay-edit")) freezeVisible();
+  }
+  $("bLayReset").onclick = resetLayout;
+  $("bResetLayout2").onclick = () => { if (confirm("Put all boxes back to their original place and size?\n\nYour settings are kept.")) resetLayout(); };
 })();
 
 // ---- start
