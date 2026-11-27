@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrAiNVC web</title>
 <script>
-const APP_VERSION = "5.5";   // <- the only place to change the version number
+const APP_VERSION = "5.6";   // <- the only place to change the version number
 document.title = "BrAiNVC v" + APP_VERSION + " web";
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-ver]").forEach(e => { e.textContent = "v" + APP_VERSION; }));
 </script>
@@ -140,12 +140,13 @@ section{position:relative}
 <main>
 
 <details class="panel" id="fmtBox" data-blk="fmt" data-lay="w">
-  <summary>Format <span>&middot; sender and receiver must use the same values</span></summary>
+  <summary>Format <span>&middot; sender and receiver must use the same values (Auto takes them from the sender)</span></summary>
   <div class="panel-row">
     <div class="field"><span class="cap">Grid (cells)</span>
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
+    <div class="field"><span class="cap">&nbsp;</span><label class="chk" title="The sender shows an announce frame with grid, K and M before every pass. When this is on, the receiver sets its Format from it."><input type="checkbox" id="chkAutoFmt" checked><span>Auto</span></label></div>
     <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (your box layout is kept)">Reset settings</button></div>
   </div>
   <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
@@ -251,8 +252,8 @@ section{position:relative}
       </div>
     </div>
     <div class="infoline" id="txInfo">Choose a file to send.</div>
-    <div class="hint sonly">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it. Pick a speed that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
-    <div class="hint vonly" hidden>Creates an MP4 (H.264) or WebM, ready for YouTube or for decoding later, encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Speed can be as high as the video frame rate (up to 30). Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
+    <div class="hint sonly">The beacon (logo, then 3-2-1) runs first, so you have time to start the receiver and align it. In between, and before every pass, an announce frame tells the receiver the format. Pick a speed that divides your screen refresh rate (10, 12, 15, 20, 30 for 60 Hz). In fullscreen the code fills the entire screen, so a shared fullscreen tab needs no corner adjustment on the receiving side.</div>
+    <div class="hint vonly" hidden>Creates an MP4 (H.264) or WebM (with an announce frame before every pass, so the receiver finds the format on its own), ready for YouTube or for decoding later, encoded in your browser (WebCodecs) at 1920&times;1080 with a keyframe every second, faster than real time. Speed can be as high as the video frame rate (up to 30). Works in Chrome, Edge, Opera, Firefox 130+ and Safari 16.4+; without H.264 support a WebM is created.</div>
   </div>
   <div id="tcWrap" class="sonly" data-blk="tx-code" data-lay="w"><canvas id="tc" width="128" height="72"></canvas></div>
   <div class="panel vonly" hidden data-blk="tx-video">
@@ -729,6 +730,70 @@ function beaconMatch(fmt, lum, thr, tpl) {
   return best;
 }
 
+// ------------------------------------------------------------ announce frame
+// A frame with a fixed layout that does not depend on the grid: 32 x 18 big cells inside a dark ring. Each big
+// cell is (cols/32) x (rows/18) normal cells, so every grid (96x54 ... 192x108) can show it and every receiver
+// grid can read it. It tells the receiver grid, K, M, file size, frame count and data rate, so nothing has to be
+// typed in. Old receivers simply ignore it (it is not a data frame).
+const ANN_C = 32, ANN_R = 18, ANN_BYTES = ((ANN_C - 2) * (ANN_R - 2)) >> 3;       // 60 bytes inside the ring
+function annCrc(b, n) { let c = 0xFFFF; for (let i = 0; i < n; i++) c = ((c << 8) & 0xFFFF) ^ CRC_TAB[((c >> 8) ^ b[i]) & 255]; return c; }
+function annPack(a) {
+  const b = new Uint8Array(ANN_BYTES), put32 = (o, v) => { b[o] = (v >>> 24) & 255; b[o + 1] = (v >>> 16) & 255; b[o + 2] = (v >>> 8) & 255; b[o + 3] = v & 255; };
+  b[0] = 0x42; b[1] = 0x56; b[2] = 1;                                              // "BV", version 1
+  b[4] = a.cols >> 8; b[5] = a.cols & 255; b[6] = a.rows >> 8; b[7] = a.rows & 255; b[8] = a.K; b[9] = a.M;
+  put32(10, a.N); put32(14, a.L); b[18] = Math.min(255, Math.max(0, Math.round(a.dfps || 0)));
+  const c = annCrc(b, 20); b[20] = c >> 8; b[21] = c & 255;
+  let x = 0xB5A1C0DE;                                                              // fixed filler: keeps the picture balanced for the threshold
+  for (let i = 22; i < ANN_BYTES; i++) { x = (x ^ (x << 13)) >>> 0; x = (x ^ (x >>> 17)) >>> 0; x = (x ^ (x << 5)) >>> 0; b[i] = x & 255; }
+  return b;
+}
+// the announce frame as bytes of the sender's grid, or null if the grid is not a multiple of 32 x 18
+function annFrame(fmt, N, L, dfps) {
+  const bx = fmt.cols / ANN_C, by = fmt.rows / ANN_R;
+  if (!Number.isInteger(bx) || !Number.isInteger(by)) return null;
+  const pay = annPack({ cols: fmt.cols, rows: fmt.rows, K: fmt.K, M: fmt.M, N, L, dfps }), bits = new Uint8Array(fmt.ncells);
+  for (let r = 0; r < ANN_R; r++) for (let c = 0; c < ANN_C; c++) {
+    let v = 1;
+    if (r > 0 && r < ANN_R - 1 && c > 0 && c < ANN_C - 1) { const j = (r - 1) * (ANN_C - 2) + (c - 1); v = (pay[j >> 3] >> (7 - (j & 7))) & 1; }
+    if (!v) continue;
+    for (let y = 0; y < by; y++) for (let x = 0; x < bx; x++) bits[(r * by + y) * fmt.cols + c * bx + x] = 1;
+  }
+  return bitsToFrame(fmt, bits);
+}
+// read an announce frame from the luminance of the RECEIVER's grid (any size). flip like beaconMatch:
+// 0 = as is, 1 = mirrored left-right, 2 = flipped top-bottom, 3 = rotated 180 degrees. Returns null if there is none.
+function annDecode(fmt, lum) {
+  const bx = fmt.cols / ANN_C, by = fmt.rows / ANN_R;
+  if (!Number.isInteger(bx) || !Number.isInteger(by)) return null;
+  const v = new Uint8Array(ANN_C * ANN_R), area = bx * by;
+  for (let r = 0; r < ANN_R; r++) for (let c = 0; c < ANN_C; c++) {
+    let sum = 0;
+    for (let y = 0; y < by; y++) { const o = (r * by + y) * fmt.cols + c * bx; for (let x = 0; x < bx; x++) sum += lum[o + x]; }
+    v[r * ANN_C + c] = (sum / area) | 0;
+  }
+  const { thr, contrast } = otsu(v);
+  if (contrast < 40) return null;
+  const pay = new Uint8Array(ANN_BYTES), u32 = o => ((pay[o] << 24) | (pay[o + 1] << 16) | (pay[o + 2] << 8) | pay[o + 3]) >>> 0;
+  for (let f = 0; f < 4; f++) {
+    pay.fill(0);
+    for (let r = 1; r < ANN_R - 1; r++) {
+      const rr = (f & 2) ? ANN_R - 1 - r : r;
+      for (let c = 1; c < ANN_C - 1; c++) {
+        const cc = (f & 1) ? ANN_C - 1 - c : c;
+        if (v[rr * ANN_C + cc] < thr) { const j = (r - 1) * (ANN_C - 2) + (c - 1); pay[j >> 3] |= 0x80 >> (j & 7); }
+      }
+    }
+    if (pay[0] !== 0x42 || pay[1] !== 0x56 || pay[2] !== 1) continue;
+    if (annCrc(pay, 20) !== ((pay[20] << 8) | pay[21])) continue;
+    const cols = (pay[4] << 8) | pay[5], rows = (pay[6] << 8) | pay[7], K = pay[8], M = pay[9], N = u32(10), L = u32(14);
+    if (cols % ANN_C || rows % ANN_R || cols / ANN_C !== rows / ANN_R || K < 1 || K > 64 || M < 1 || M > 8) continue;
+    const S = K + M, g = makeFormat(cols, rows, K, M);
+    if (!N || N % S || L > (N / S) * K * g.pay) continue;
+    return { cols, rows, K, M, N, L, dfps: pay[18], flip: f };
+  }
+  return null;
+}
+
 // ------------------------------------------------------------ video muxers
 // Small container writers for the output of a WebCodecs VideoEncoder: MP4 (H.264) and WebM (VP8/VP9).
 // samples = [{ data: Uint8Array, ts: timestamp in microseconds, key: boolean }] in decode order, no frame reordering.
@@ -843,11 +908,11 @@ const store = {
 
 // ---- format settings
 let fmt;
-function applyFormat() {
+function applyFormat(auto) {                // auto === true: set from the sender's announce frame, not saved as your setting
   const [c, r] = $("selGrid").value.split("x").map(Number);
   const K = clamp(parseInt($("numK").value) || 8, 1, 64), M = clamp(parseInt($("numM").value) || 2, 1, 8);
   fmt = makeFormat(c, r, K, M);
-  store.set("fmt", { grid: $("selGrid").value, K, M });
+  if (auto !== true) store.set("fmt", { grid: $("selGrid").value, K, M });
   $("tc").width = c; $("tc").height = r;
   pv.width = c; pv.height = r;
   samplerDirty = true; tpls = beaconTemplates(fmt); beaconCache = {};
@@ -888,13 +953,13 @@ const vid = $("vid"), ov = $("ov"), ovCtx = ov.getContext("2d"), aud = $("aud");
 const roi = document.createElement("canvas"), rctx = roi.getContext("2d", { willReadFrequently: true });
 let srcType = "screen";                  // screen | camera | file
 // file playback control: adaptive speed + skipping what we already have
-const fp = { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0 };
+const fp = { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0, annSeq: 0, ann: null, annText: "", annT: 0 };
 // "Exact" file mode: the video is paused and stepped through frame by frame, so no frame can be dropped or missed
-const ex = { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, sentAt: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 };
+const ex = { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, sentAt: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, annAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 };
 let stream = null, running = false, kind = "screen", quadN = null, sampler = null, samplerDirty = true;
 let lumBuf = null, asm = null, completed = false, result = null, resultUrl = null;
 let cntScan = 0, cntOk = 0, rateScan = 0, rateOk = 0, lastPv = 0, lastThr = 128;
-let drag = -1, tpls = null, lastBeacon = 0;
+let drag = -1, tpls = null, lastBeacon = 0, lastAnn = 0;
 const live = { nextG: 0, audio: null, info: null, busy: false, unsupported: false, waitG: -1, waitSince: 0, skipped: 0, ended: false };
 
 const defaultQuad = k => k === "camera" ? [[0.15, 0.2], [0.85, 0.2], [0.85, 0.8], [0.15, 0.8]]
@@ -960,8 +1025,8 @@ $("bFile").onclick = () => $("vfile").click();
 $("vfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   stopSource(); srcType = "file"; kind = "screen";
-  Object.assign(fp, { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0 });
-  Object.assign(ex, { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 });
+  Object.assign(fp, { passes: 0, lastMedia: 0, beacon: null, seen: 0, beaconSeq: 0, annSeq: 0, ann: null, annText: "", annT: 0 });
+  Object.assign(ex, { on: false, phase: "off", fps: 0, total: 0, k: 0, expect: 0, h: 2, lastN: -1, lastK: -1, needBack: false, seqAtSeek: 0, annAtSeek: 0, probe: [], pass: 0, stalls: 0, gotOk: false, noOk: 0, lastStep: 1 });
   const exact = fileMode() === "exact" && "requestVideoFrameCallback" in vid;
   vid.srcObject = null; vid.src = URL.createObjectURL(f); vid.muted = true; vid.loop = !exact;
   vid.playbackRate = exact ? 1 : (parseFloat($("selSpeed").value) || 1);
@@ -1071,12 +1136,17 @@ function processFrame() {
   lastThr = res.thr; cntScan++;
   const now = performance.now();
   if (now - lastPv > 120) { lastPv = now; drawPreview(res.contrast >= 40); }
-  if (!res.frame && res.contrast >= 40 && now - lastBeacon > (ex.on ? 0 : 200)) {
+  let isAnn = false;
+  if (!res.frame && res.contrast >= 40 && now - lastAnn > (ex.on ? 0 : 100)) {          // announce frame? (sender tells grid, K, M ...)
+    lastAnn = now; const a = annDecode(fmt, lumBuf);
+    if (a) { isAnn = true; onAnnounce(a); }
+  }
+  if (!res.frame && !isAnn && res.contrast >= 40 && now - lastBeacon > (ex.on ? 0 : 200)) {
     lastBeacon = now; const bm = beaconMatch(fmt, lumBuf, res.thr, tpls);
     fp.beacon = { name: bm.name, ratio: bm.ratio, t: now }; if (bm.ratio >= 0.85) fp.beaconSeq++;
     showBeacon(bm);
   }
-  else if (res.frame && now - lastBeacon > 1500) { lastBeacon = now; $("beacon").textContent = ""; }
+  else if (res.frame && now - lastBeacon > 1500) { lastBeacon = now; if (now - fp.annT > 4000) $("beacon").textContent = ""; }
   if (res.frame) {
     cntOk++;
     if (srcType === "file") { fp.seen++; if (ex.on && ex.phase === "step") exactLearn(res.frame.n); }
@@ -1115,7 +1185,7 @@ function exactFinishProbe() {
   setStatus("Exact mode: stepping through every frame (video has " + fps + " frames/s).");
 }
 function exactSeek(k, nudge) {
-  ex.k = k; ex.expect = k / ex.fps; ex.sentAt = performance.now(); ex.seqAtSeek = fp.beaconSeq;
+  ex.k = k; ex.expect = k / ex.fps; ex.sentAt = performance.now(); ex.seqAtSeek = fp.beaconSeq; ex.annAtSeek = fp.annSeq;
   vid.currentTime = (k + 0.5) / ex.fps + (nudge || 0);
 }
 // a valid data frame n was decoded at video frame ex.k: learn how many video frames one data frame lasts
@@ -1148,6 +1218,7 @@ function exactAdvance() {
   if (bk === "logo") step = Math.max(1, Math.round(ex.fps / 3));                    // logo: skip quickly
   else if (bk === "d3" || bk === "d2") step = Math.max(1, Math.round(ex.fps / 2));  // each digit lasts a second, so this cannot overshoot
   else if (bk === "d1") step = 1;                                                   // last digit: creep up to the first data frame
+  else if (fp.annSeq > ex.annAtSeek) step = Math.max(1, Math.round(ex.fps / 10));    // announce frame read: move on quickly
   else if (ex.noOk >= 4 && fp.seen > 0) step = Math.max(1, Math.round(ex.fps / 8)); // unreadable part: run through
   else if (asm && asm.N && ex.lastN >= 0 && !asm.allReady()) {                      // jump over parts we already have
     const g = Math.floor(ex.lastN / fmt.S);
@@ -1178,11 +1249,30 @@ setInterval(() => {                                                             
   }
 }, 500);
 
+const sizeText = n => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " kB" : (n / 1048576).toFixed(2) + " MB";
+// the sender's announce frame was read: show it and (if wanted) take over its format
+function onAnnounce(a) {
+  fp.annSeq++; fp.ann = a; fp.annT = performance.now();
+  const same = a.cols === fmt.cols && a.rows === fmt.rows && a.K === fmt.K && a.M === fmt.M, grid = a.cols + "x" + a.rows;
+  let t = "Announce: " + grid + ", K " + a.K + ", M " + a.M + ", " + sizeText(a.L) + ", " + a.N + " frames", cls = "ok";
+  if (!same) {
+    if (![...$("selGrid").options].some(o => o.value === grid)) { t += " - this grid is not available here"; cls = "bad"; setStatus("The sender uses " + grid + ", which this page does not offer.", "bad"); }
+    else if ($("chkAutoFmt").checked) {
+      $("selGrid").value = grid; $("numK").value = a.K; $("numM").value = a.M; applyFormat(true);
+      t += " - format set automatically";
+      setStatus("Format taken from the sender (" + grid + ", K " + a.K + ", M " + a.M + "). Waiting for data ...");
+    } else { t += " - differs from your Format settings, switch on Auto in the Format box"; cls = "bad"; setStatus("The sender uses " + grid + ", K " + a.K + ", M " + a.M + ". Switch on Auto in the Format box or set the same values.", "bad"); }
+  }
+  if (a.flip === 1) { t += " - mirrored, press Mirror"; cls = "dim"; }
+  else if (a.flip === 2) { t += " - upside down and mirrored, press Mirror, then Rotate twice"; cls = "dim"; }
+  else if (a.flip === 3) { t += " - upside down, press Rotate twice"; cls = "dim"; }
+  if (t !== fp.annText || $("beacon").className !== cls) { fp.annText = t; $("beacon").textContent = t; $("beacon").className = cls; }
+}
 const BEACON_NAMES = { logo: "Beacon", d3: "Countdown 3", d2: "Countdown 2", d1: "Countdown 1" };
 // alignment feedback while the beacon is on screen: how much of the picture matches the expected image
 function showBeacon(m) {
   const el = $("beacon");
-  if (!m || m.ratio < 0.7) { el.textContent = ""; return; }
+  if (!m || m.ratio < 0.7) { if (performance.now() - fp.annT > 4000) el.textContent = ""; return; }
   const pct = Math.round(m.ratio * 100);
   let t = BEACON_NAMES[m.name] + ": " + pct + "% match";
   if (m.flip === 1) t += " - mirrored, press Mirror";
@@ -1334,6 +1424,7 @@ setInterval(() => {
   const prog = asm.N ? ready / asm.G : 0;
   $("barG").style.width = (prog * 100).toFixed(1) + "%";
   const extra = [];
+  if (fp.ann) extra.push("announced: " + sizeText(fp.ann.L) + ", " + fp.ann.N + " frames" + (fp.ann.dfps ? " at " + fp.ann.dfps + "/s" : ""));
   if (live.audio) extra.push(live.audio.statusText() + (live.skipped ? " &middot; skipped groups " + live.skipped : ""));
   if (running && srcType === "file") extra.push(ex.on && ex.phase === "step"
     ? "file: exact stepping, frame " + ex.k + " / " + ex.total + ", step " + ex.lastStep + ", " + ex.h.toFixed(1) + " video frames per data frame, pass " + (ex.pass + 1)
@@ -1350,6 +1441,8 @@ setInterval(() => {
 }, 1000);
 
 $("selGrid").onchange = $("numK").onchange = $("numM").onchange = applyFormat;
+$("chkAutoFmt").checked = !!store.get("autofmt", true);
+$("chkAutoFmt").onchange = () => store.set("autofmt", $("chkAutoFmt").checked);
 const syncModeUi = () => { $("grpPre").hidden = mode() !== "live"; };
 document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { store.set("mode", mode()); syncModeUi(); if (mode() === "live") liveTick(); });
 $("numPre").onchange = () => { store.set("pre", $("numPre").value); };
@@ -1402,24 +1495,27 @@ function renderBytes(ctx, f) {
   ctx.putImageData(id, 0, 0);
 }
 function paintBytes(f) { renderBytes(tctx, f); }
+const ANN_MS = 600;                                   // the announce frame is shown this long before every pass
+function txAnnounce() { return annFrame(fmt, enc.N, enc.L, clamp(parseFloat($("numFps").value) || 10, 1, 30)) || beaconFrame("BrAiNVC"); }
 function sendLoop(now) {
   if (!sendRun) return;
   const t = now - t0;
   if (t < introMs) {                                   // beacon: logo, then 3-2-1
-    const st = t < beaconMs ? "BrAiNVC" : String(3 - Math.floor((t - beaconMs) / 1000));
+    const st = t < beaconMs ? (Math.floor(t / 1000) % 2 === 1 ? "ANN" : "BrAiNVC") : String(3 - Math.floor((t - beaconMs) / 1000));   // logo, every 2nd second the announce frame
     if (st !== lastIntro) {
-      lastIntro = st; paintBytes(beaconFrame(st));
-      $("txInfo").textContent = st === "BrAiNVC" ? "Beacon: start the receiver and align it now ..." : "Starting in " + st + " ...";
+      lastIntro = st; paintBytes(st === "ANN" ? txAnnounce() : beaconFrame(st));
+      $("txInfo").textContent = st === "BrAiNVC" ? "Beacon: start the receiver and align it now ..." : st === "ANN" ? "Announce frame: the receiver can set its format from it ..." : "Starting in " + st + " ...";
     }
     requestAnimationFrame(sendLoop);
     return;
   }
   const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
-  const idx = Math.floor((t - introMs) * fps / 1000);
-  if (idx !== lastIdx) {
-    lastIdx = idx;
-    const n = idx % enc.N;
-    drawTxFrame(n); updateTxInfo(n, Math.floor(idx / enc.N));
+  const cyc = ANN_MS + enc.N * 1000 / fps, e = t - introMs, pass = Math.floor(e / cyc), tt = e - pass * cyc;   // every pass: announce frame, then the data frames
+  const key = tt < ANN_MS ? -1 - pass : pass * enc.N + Math.min(enc.N - 1, Math.floor((tt - ANN_MS) * fps / 1000));
+  if (key !== lastIdx) {
+    lastIdx = key;
+    if (tt < ANN_MS) { paintBytes(txAnnounce()); updateTxInfo(0, pass); }
+    else { const n = key - pass * enc.N; drawTxFrame(n); updateTxInfo(n, pass); }
   }
   requestAnimationFrame(sendLoop);
 }
@@ -1427,7 +1523,7 @@ $("bStart").onclick = () => {
   if (!enc) return;
   const bs = clamp(parseFloat($("numBeacon").value) || 0, 0, 30);
   beaconMs = bs * 1000; introMs = bs > 0 ? beaconMs + 3000 : 0; lastIntro = "";
-  sendRun = true; t0 = performance.now(); lastIdx = -1; updateTxButtons(); requestAnimationFrame(sendLoop);
+  sendRun = true; t0 = performance.now(); lastIdx = null; updateTxButtons(); requestAnimationFrame(sendLoop);
 };
 function haltSend() { sendRun = false; updateTxButtons(); }
 $("bHalt").onclick = haltSend;
@@ -1524,7 +1620,8 @@ async function createVideo() {
 
     const beaconFrames = beaconS > 0 ? Math.round(beaconS * vfps) + 3 * vfps : 0;
     const dataFrames = Math.round(enc.N * passes * vfps / dfps);
-    const total = beaconFrames + dataFrames;
+    const annHold = Math.max(3, Math.round(0.6 * vfps)), annF = annFrame(fmt, enc.N, enc.L, dfps) || beaconFrame("BrAiNVC");
+    const total = beaconFrames + dataFrames + passes * annHold;
     const t0 = performance.now();
     let vk = 0, lastUi = 0;
     const emit = async (bytes, repeat) => {
@@ -1548,11 +1645,14 @@ async function createVideo() {
       }
     };
     if (beaconS > 0) {                                                     // beacon: logo, then 3-2-1
-      await emit(beaconFrame("BrAiNVC"), Math.round(beaconS * vfps));
+      for (let left = Math.round(beaconS * vfps), sec = 0; left > 0; sec++) {     // logo, every 2nd second the announce frame
+        const cnt = Math.min(vfps, left); await emit(sec % 2 === 1 ? annF : beaconFrame("BrAiNVC"), cnt); left -= cnt;
+      }
       for (const d of ["3", "2", "1"]) await emit(beaconFrame(d), vfps);
     }
     let done = 0;
     for (let p = 0; p < passes; p++) {
+      await emit(annF, annHold);                                          // every pass starts with the announce frame
       for (let n = 0; n < enc.N; n++) {
         const rep = Math.max(1, Math.round((done + 1) * vfps / dfps) - Math.round(done * vfps / dfps));   // uneven holds alternate (7,8,7,8 ...)
         await emit(enc.frame(n), rep);
