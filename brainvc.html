@@ -146,7 +146,7 @@ section{position:relative}
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
-    <div class="field"><span class="cap">&nbsp;</span><label class="chk" title="The sender shows an announce frame with grid, K and M before every pass. When this is on, the receiver sets its Format from it."><input type="checkbox" id="chkAutoFmt" checked><span>Auto</span></label></div>
+    <div class="field"><span class="cap">&nbsp;</span><label class="chk" title="The sender shows an announce frame with grid, K and M before every pass. When this is on, the receiver sets its Format from it."><input type="checkbox" id="chkAutoFmt" checked><span><b>AUTO</b></span></label></div>
     <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (your box layout is kept)">Reset settings</button></div>
   </div>
   <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
@@ -1443,6 +1443,11 @@ setInterval(() => {
 $("selGrid").onchange = $("numK").onchange = $("numM").onchange = applyFormat;
 $("chkAutoFmt").checked = !!store.get("autofmt", true);
 $("chkAutoFmt").onchange = () => store.set("autofmt", $("chkAutoFmt").checked);
+// the Format box and the A-Link settings box remember whether they were open or closed
+for (const [id, key, def] of [["fmtBox", "fmtopen", false], ["aSetBox", "asetopen", true]]) {
+  const box = $(id); box.open = !!store.get(key, def);
+  box.addEventListener("toggle", () => store.set(key, box.open));
+}
 const syncModeUi = () => { $("grpPre").hidden = mode() !== "live"; };
 document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { store.set("mode", mode()); syncModeUi(); if (mode() === "live") liveTick(); });
 $("numPre").onchange = () => { store.set("pre", $("numPre").value); };
