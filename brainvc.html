@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrAiNVC web</title>
 <script>
-const APP_VERSION = "5.6";   // <- the only place to change the version number
+const APP_VERSION = "6.0";   // <- the only place to change the version number
 document.title = "BrAiNVC v" + APP_VERSION + " web";
 document.addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-ver]").forEach(e => { e.textContent = "v" + APP_VERSION; }));
 </script>
@@ -92,6 +92,13 @@ audio{width:100%;max-width:560px}
 a.linkbtn{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--txt);text-decoration:none}
 a.linkbtn:hover{border-color:#3a6c86}
 a.link{color:var(--acc)}
+.test-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.test-result{overflow-x:auto}
+.test-result table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.test-result th,.test-result td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.test-result th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.test-result tr:last-child td{border-bottom:0}
+.test-pass{color:var(--ok);font-weight:600}.test-fail{color:var(--bad);font-weight:600}
 .warnpanel{border-color:#6b4a1d;background:#1b1710}
 .warnpanel h3,.warnbar b{color:#ffb454}
 .disc h3{margin:16px 0 6px;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
@@ -132,6 +139,7 @@ section{position:relative}
     <button id="tabRx" class="on">Receive</button>
     <button id="tabTx">Send</button>
     <button id="tabAudio">A-Link</button>
+    <button id="tabTest">Test Lab</button>
     <button id="tabAbout">About</button>
   </nav>
   <button id="bLayout" title="Move and resize the boxes: drag a box to move it, drag its corner to resize it">Layout</button>
@@ -142,14 +150,17 @@ section{position:relative}
 <details class="panel" id="fmtBox" data-blk="fmt" data-lay="w">
   <summary>Format <span>&middot; sender and receiver must use the same values (Auto takes them from the sender)</span></summary>
   <div class="panel-row">
+    <div class="field"><span class="cap">Profile</span>
+      <select id="fmtProfile"><option value="">Custom / manual</option></select></div>
     <div class="field"><span class="cap">Grid (cells)</span>
       <select id="selGrid"><option>96x54</option><option>128x72</option><option>160x90</option><option selected>192x108</option></select></div>
     <div class="field"><span class="cap">Data per group (K)</span><input id="numK" type="number" min="1" max="64" value="8"></div>
     <div class="field"><span class="cap">Parity per group (M)</span><input id="numM" type="number" min="1" max="8" value="2"></div>
-    <div class="field"><span class="cap">&nbsp;</span><label class="chk" title="The sender shows an announce frame with grid, K and M before every pass. When this is on, the receiver sets its Format from it."><input type="checkbox" id="chkAutoFmt" checked><span><b>AUTO</b></span></label></div>
-    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (your box layout is kept)">Reset settings</button></div>
+    <div class="field"><span class="cap">&nbsp;</span><label class="chk" title="The sender shows an announce frame with grid, K and M before every pass (and in exported videos). When this is on, the receiver sets its Format from it. With AUTO off nothing is announced and both sides need the same values."><input type="checkbox" id="chkAutoFmt" checked><span><b>RX/TX Format</b></span></label></div>
+    <div class="field"><span class="cap">Receiver uses</span><span id="fmtActive" class="dim" style="line-height:32px">&ndash;</span></div>
+    <div class="field"><span class="cap">&nbsp;</span><button id="bResetAll" title="Reset every setting of this page to its default (your box layout is kept)">Reset</button></div>
   </div>
-  <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt.</div>
+  <div class="hint">Frame format: header, CRC16, Reed-Solomon over groups of K+M frames. Up to M lost frames per group are rebuilt. Select a profile as a starting point, then change Grid / K / M manually if needed. With AUTO on, a format read from the sender is only used by the receiver (see &ldquo;Receiver uses&rdquo;); your own Profile / Grid / K / M values stay untouched and are still used for sending and the Test Lab.</div>
 </details>
 
 <!-- ============================ RECEIVE ============================ -->
@@ -280,7 +291,7 @@ section{position:relative}
   <details class="panel" id="aSetBox" open data-blk="a-set" data-lay="w">
     <summary>A-Link settings <span>&middot; only the sender needs them</span></summary>
     <div class="panel-row">
-      <div class="field"><span class="cap">Profile</span><select id="aProf"><option value="wavmax">WAV max (lossless)</option><option value="mp3fast">MP3 fast (128 kbit/s)</option><option value="mp3small">MP3 small (80 kbit/s)</option><option value="opus">WebM/Opus (48 kbit/s)</option><option value="robust">Robust (WebM/MP3, slow)</option><option value="custom">Custom</option></select></div>
+      <div class="field"><span class="cap">Profile</span><select id="aProf"><option value="wavmax">WAV max (lossless)</option><option value="mp3fast">MP3/fast</option><option value="mp3slow">MP3/slow</option><option value="webmfast">WebM/fast</option><option value="webmslow">WebM/slow)</option><option value="custom">Custom</option></select></div>
       <div class="field"><span class="cap">Baud (symbols/s)</span><input id="aBaud" type="number" min="50" max="48000" value="1200"></div>
       <div class="field"><span class="cap">Lowest tone (Hz)</span><input id="aF0" type="number" min="50" max="40000" value="600"></div>
       <div class="field"><span class="cap">Tone spacing (Hz)</span><input id="aDf" type="number" min="50" max="40000" value="1800"></div>
@@ -302,6 +313,48 @@ section{position:relative}
   </div>
   <div class="panel hint" data-blk="a-how">
     <b>How it works:</b> a fixed 1200 baud preamble (sync word plus all settings) leads into the data tones, so the receiver finds the start and the settings on its own, even after the codec delays the signal. Frames use the same CRC16 and Reed-Solomon recovery as the optical link. WebM/Opus is recorded in real time by the browser (as long as the playing time); WAV and MP3 are created faster than real time. MP3 encoding loads the lamejs library from a CDN once.
+  </div>
+</section>
+
+<!-- ============================== TEST LAB ============================== -->
+<section id="test" hidden>
+  <div class="panel" data-blk="test-main">
+    <h2 style="margin:0 0 6px">BrAiNVC Test Lab</h2>
+    <p class="dim" style="margin:0">Repeatable local transport benchmarks. The same generated test data is passed through the selected transport and checked byte-for-byte. No camera, microphone or second device is needed. A-Link creates the complete PCM signal in memory, so 100 MB can require several GB of RAM. For that size, use one run and test Optic first.</p>
+    <div class="test-grid" style="margin-top:14px">
+      <div class="field"><span class="cap">Transport</span>
+        <select id="testTransport"><option value="both">Optic + A-Link</option><option value="optic">Optic</option><option value="audio">A-Link (PCM modem)</option></select>
+      </div>
+      <div class="field"><span class="cap">Test file size</span>
+        <select id="testSize"><option value="1000000">1 MB · quick</option><option value="10000000" selected>10 MB · normal</option><option value="100000000">100 MB · extended</option></select>
+      </div>
+      <div class="field"><span class="cap">Runs</span>
+        <select id="testRuns"><option>1</option><option selected>3</option><option>5</option></select>
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <button id="testStart" class="primary">Run benchmark</button>
+      </div>
+    </div>
+    <div class="bar"><i id="testBar"></i></div>
+    <div id="testStatus" class="dim">Ready. Choose a transport and start the benchmark.</div>
+  </div>
+  <div class="panel" data-blk="test-res">
+    <div class="panel-row" style="justify-content:space-between;align-items:center">
+      <div><b>Results</b><div class="hint" style="margin:2px 0 0">Successful runs stay here until you clear or reload the page.</div></div>
+      <div class="btnrow"><button id="testCsv" disabled>Export CSV</button><button id="testJson" disabled>Export JSON</button><button id="testClear">Clear</button></div>
+    </div>
+    <div id="testSummary" class="tiles" style="margin-top:12px">
+      <div class="tile"><div class="k">Runs</div><div class="v" id="testCount">0</div><div class="s">completed</div></div>
+      <div class="tile"><div class="k">Passed</div><div class="v" id="testPassed">0</div><div class="s">bit-exact</div></div>
+      <div class="tile"><div class="k">Failed</div><div class="v" id="testFailed">0</div><div class="s">not bit-exact</div></div>
+    </div>
+    <div class="test-result" style="margin-top:14px">
+      <table><thead><tr><th>Transport</th><th>Size</th><th>Run</th><th>Time</th><th>Rate</th><th>Frames</th><th>CRC bad</th><th>RS fixed</th><th>Integrity</th></tr></thead>
+      <tbody id="testRows"><tr><td colspan="9" class="dim">No tests yet.</td></tr></tbody></table>
+    </div>
+  </div>
+  <div class="panel hint" data-blk="test-how" data-lay="w">
+    <b>What is measured?</b> Optic runs the real frame encoder, cell decoder, CRC check and Reed-Solomon assembler in a local software loopback. A-Link generates and demodulates the real FSK PCM signal, then checks the restored bytes. A-Link results are measured before MP3/Opus encoding, so codec comparisons can be added as a separate test later. Transfer time is measured separately from processing time where applicable.
   </div>
 </section>
 
@@ -907,28 +960,61 @@ const store = {
 };
 
 // ---- format settings
-let fmt;
-function applyFormat(auto) {                // auto === true: set from the sender's announce frame, not saved as your setting
+// Add profiles here: give each one a unique key, a label, and Grid / K / M values.
+// The profile is only a preset. You can still edit all three values afterwards.
+const FORMAT_PROFILES = {
+  VideoHS: {
+    label: "VideoHS / MaxK",
+    grid: "192x108", K: 16, M: 1
+  },
+  AudioHS: {
+    label: "AudioHS / MaxK",
+    grid: "128x72", K: 16, M: 1
+  }
+};
+for (const [id, p] of Object.entries(FORMAT_PROFILES)) {
+  const option = document.createElement("option");
+  option.value = id; option.textContent = p.label;
+  $("fmtProfile").appendChild(option);
+}
+
+let fmt, userFmt;   // fmt = what the receiver decodes with (may come from the sender), userFmt = your own Grid / K / M (sender, Test Lab, A-Link)
+function showActiveFmt(auto) {
+  const f = fmt;
+  $("fmtActive").textContent = f.cols + "x" + f.rows + " \u00b7 K " + f.K + " \u00b7 M " + f.M + (auto ? " (from sender)" : " (manual)");
+}
+// auto === true: `ann` is the sender's announce frame. Only the receiver switches, the manual fields stay as they are.
+function applyFormat(auto, selectedProfile, ann) {
+  if (auto === true && ann) {
+    fmt = makeFormat(ann.cols, ann.rows, ann.K, ann.M);
+    pv.width = ann.cols; pv.height = ann.rows;
+    samplerDirty = true; tpls = beaconTemplates(fmt);
+    resetReceiver();
+    showActiveFmt(true);
+    return;
+  }
   const [c, r] = $("selGrid").value.split("x").map(Number);
   const K = clamp(parseInt($("numK").value) || 8, 1, 64), M = clamp(parseInt($("numM").value) || 2, 1, 8);
-  fmt = makeFormat(c, r, K, M);
-  if (auto !== true) store.set("fmt", { grid: $("selGrid").value, K, M });
+  fmt = userFmt = makeFormat(c, r, K, M);
+  $("fmtProfile").value = selectedProfile || "";
+  store.set("fmt", { grid: $("selGrid").value, K, M, profile: selectedProfile || "" });
   $("tc").width = c; $("tc").height = r;
   pv.width = c; pv.height = r;
   samplerDirty = true; tpls = beaconTemplates(fmt); beaconCache = {};
   resetReceiver();
+  showActiveFmt(false);
   rebuildEnc();
   if (typeof audInfo === "function") audInfo();
 }
 const pv = $("pv"), pvCtx = pv.getContext("2d");
 {
   const f = store.get("fmt", null);
-  if (f) { $("selGrid").value = f.grid; $("numK").value = f.K; $("numM").value = f.M; }
+  if (f) { $("selGrid").value = f.grid; $("numK").value = f.K; $("numM").value = f.M; if (f.profile && FORMAT_PROFILES[f.profile]) $("fmtProfile").value = f.profile; }
 }
 
 // ---- tabs
 function showTab(name) {
-  for (const [sec, btn] of [["rx", "tabRx"], ["tx", "tabTx"], ["audio", "tabAudio"], ["about", "tabAbout"]]) {
+  for (const [sec, btn] of [["rx", "tabRx"], ["tx", "tabTx"], ["audio", "tabAudio"], ["test", "tabTest"], ["about", "tabAbout"]]) {
     $(sec).hidden = sec !== name; $(btn).classList.toggle("on", sec === name);
   }
   window.scrollTo(0, 0);
@@ -936,6 +1022,7 @@ function showTab(name) {
 $("tabRx").onclick = () => showTab("rx");
 $("tabTx").onclick = () => showTab("tx");
 $("tabAudio").onclick = () => showTab("audio");
+$("tabTest").onclick = () => showTab("test");
 $("tabAbout").onclick = () => showTab("about");
 $("lnkAbout").onclick = e => { e.preventDefault(); showTab("about"); };
 
@@ -1258,8 +1345,8 @@ function onAnnounce(a) {
   if (!same) {
     if (![...$("selGrid").options].some(o => o.value === grid)) { t += " - this grid is not available here"; cls = "bad"; setStatus("The sender uses " + grid + ", which this page does not offer.", "bad"); }
     else if ($("chkAutoFmt").checked) {
-      $("selGrid").value = grid; $("numK").value = a.K; $("numM").value = a.M; applyFormat(true);
-      t += " - format set automatically";
+      applyFormat(true, null, a);
+      t += " - receiver format set automatically (your Custom values are kept)";
       setStatus("Format taken from the sender (" + grid + ", K " + a.K + ", M " + a.M + "). Waiting for data ...");
     } else { t += " - differs from your Format settings, switch on Auto in the Format box"; cls = "bad"; setStatus("The sender uses " + grid + ", K " + a.K + ", M " + a.M + ". Switch on Auto in the Format box or set the same values.", "bad"); }
   }
@@ -1440,9 +1527,20 @@ setInterval(() => {
   if (running && asm.N && !completed && mode() === "live") liveTick();
 }, 1000);
 
-$("selGrid").onchange = $("numK").onchange = $("numM").onchange = applyFormat;
+$("fmtProfile").onchange = () => {
+  const p = FORMAT_PROFILES[$("fmtProfile").value];
+  if (!p) return;
+  $("selGrid").value = p.grid;
+  $("numK").value = p.K;
+  $("numM").value = p.M;
+  applyFormat(false, $("fmtProfile").value);
+};
+$("selGrid").onchange = $("numK").onchange = $("numM").onchange = () => applyFormat();
 $("chkAutoFmt").checked = !!store.get("autofmt", true);
-$("chkAutoFmt").onchange = () => store.set("autofmt", $("chkAutoFmt").checked);
+$("chkAutoFmt").onchange = () => {
+  store.set("autofmt", $("chkAutoFmt").checked);
+  if (!$("chkAutoFmt").checked && (fmt.cols !== userFmt.cols || fmt.rows !== userFmt.rows || fmt.K !== userFmt.K || fmt.M !== userFmt.M)) applyFormat(false, $("fmtProfile").value);
+};
 // the Format box and the A-Link settings box remember whether they were open or closed
 for (const [id, key, def] of [["fmtBox", "fmtopen", false], ["aSetBox", "asetopen", true]]) {
   const box = $(id); box.open = !!store.get(key, def);
@@ -1473,7 +1571,7 @@ function rebuildEnc() {
   haltSend(); enc = null;
   if (sendData) {
     mkResult = null;                                   // a video made with the old format would not match anymore
-    const en = new Encoder(fmt, sendData);
+    const en = new Encoder(userFmt, sendData);
     if (en.L > 0xFFFFFFFF || en.N > 0xFFFFFFFF) $("txInfo").textContent = "File too large for this format (" + en.N + " frames, max 4294967295).";
     else { enc = en; updateTxInfo(0, 0); drawTxFrame(0); vSet("Ready, press Create video."); }
   }
@@ -1482,18 +1580,18 @@ function rebuildEnc() {
 function updateTxInfo(n, pass) {
   if (!enc) return;
   const fps = clamp(parseFloat($("numFps").value) || 10, 1, 30);
-  const kb = fps * fmt.pay * fmt.K / fmt.S / 1024;
-  $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; <b>" + enc.N + "</b> frames in " + enc.G + " groups of " + fmt.S + " &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
+  const kb = fps * userFmt.pay * userFmt.K / userFmt.S / 1024;
+  $("txInfo").innerHTML = "file: <b>" + enc.L + "</b> bytes &middot; <b>" + enc.N + "</b> frames in " + enc.G + " groups of " + userFmt.S + " &middot; pass <b>" + (pass + 1) + "</b>, frame " + (n + 1) +
     "<br>speed: " + fps + " frames/s &asymp; <b>" + kb.toFixed(1) + " kB/s</b> &middot; one pass takes " + (enc.N / fps).toFixed(1) + " s";
 }
 function beaconFrame(text) {
-  if (!beaconCache[text]) beaconCache[text] = bitsToFrame(fmt, beaconBits(fmt, text));
+  if (!beaconCache[text]) beaconCache[text] = bitsToFrame(userFmt, beaconBits(userFmt, text));
   return beaconCache[text];
 }
 function drawTxFrame(n) { paintBytes(enc.frame(n)); }
 function renderBytes(ctx, f) {
-  const id = ctx.createImageData(fmt.cols, fmt.rows), d = id.data;
-  for (let i = 0; i < fmt.ncells; i++) {
+  const id = ctx.createImageData(userFmt.cols, userFmt.rows), d = id.data;
+  for (let i = 0; i < userFmt.ncells; i++) {
     const v = (f[i >> 3] & (0x80 >> (i & 7))) ? 0 : 255;
     d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
   }
@@ -1501,7 +1599,8 @@ function renderBytes(ctx, f) {
 }
 function paintBytes(f) { renderBytes(tctx, f); }
 const ANN_MS = 600;                                   // the announce frame is shown this long before every pass
-function txAnnounce() { return annFrame(fmt, enc.N, enc.L, clamp(parseFloat($("numFps").value) || 10, 1, 30)) || beaconFrame("BrAiNVC"); }
+// with AUTO off nothing is announced: the announce slot just shows the plain logo beacon
+function txAnnounce() { return ($("chkAutoFmt").checked && annFrame(userFmt, enc.N, enc.L, clamp(parseFloat($("numFps").value) || 10, 1, 30))) || beaconFrame("BrAiNVC"); }
 function sendLoop(now) {
   if (!sendRun) return;
   const t = now - t0;
@@ -1562,7 +1661,7 @@ const mmss = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec 
 // "Auto": the content only changes dfps times per second (the rest are repeats), so the bitrate follows the data rate instead of a fixed
 // high value. Budget: about 12 bit per cell for every new data frame, plus one fresh keyframe per second (counted as 1.5 data frames).
 function autoBitrate(dfps) {
-  const bps = (dfps + 1.5) * fmt.ncells * 12;
+  const bps = (dfps + 1.5) * userFmt.ncells * 12;
   return clamp(Math.round(bps / 1e5) / 10, 1, 32) * 1e6;              // 1 ... 32 Mbit/s, rounded to 0.1
 }
 
@@ -1597,15 +1696,15 @@ async function createVideo() {
   const brSel = $("selVBr").value;
   const bitrate = brSel === "auto" ? autoBitrate(dfps) : (parseFloat(brSel) || 8) * 1e6;
   const beaconS = clamp(parseFloat($("numBeacon").value) || 0, 0, 30);
-  const cell = Math.max(1, Math.floor(1920 / fmt.cols));
-  const W = fmt.cols * cell, H = fmt.rows * cell;
+  const cell = Math.max(1, Math.floor(1920 / userFmt.cols));
+  const W = userFmt.cols * cell, H = userFmt.rows * cell;
   mkBusy = true; mkCancel = false; mkResult = null; updateVideoUi();
   $("barV").style.width = "0%";
   let encoder = null;
   try {
     const pick = await pickVideoCodec(W, H, vfps, bitrate);
     if (!pick) throw new Error("no usable video codec in this browser");
-    const small = document.createElement("canvas"); small.width = fmt.cols; small.height = fmt.rows;
+    const small = document.createElement("canvas"); small.width = userFmt.cols; small.height = userFmt.rows;
     const sctx = small.getContext("2d");
     const big = document.createElement("canvas"); big.width = W; big.height = H;
     const bctx = big.getContext("2d", { alpha: false }); bctx.imageSmoothingEnabled = false;
@@ -1625,7 +1724,7 @@ async function createVideo() {
 
     const beaconFrames = beaconS > 0 ? Math.round(beaconS * vfps) + 3 * vfps : 0;
     const dataFrames = Math.round(enc.N * passes * vfps / dfps);
-    const annHold = Math.max(3, Math.round(0.6 * vfps)), annF = annFrame(fmt, enc.N, enc.L, dfps) || beaconFrame("BrAiNVC");
+    const annHold = Math.max(3, Math.round(0.6 * vfps)), annF = ($("chkAutoFmt").checked && annFrame(userFmt, enc.N, enc.L, dfps)) || beaconFrame("BrAiNVC");
     const total = beaconFrames + dataFrames + passes * annHold;
     const t0 = performance.now();
     let vk = 0, lastUi = 0;
@@ -1898,10 +1997,10 @@ async function amDecodeBuffer(ab, progress) {
 // ---- settings
 const AUD_PROFILES = {
   wavmax:   { fmt: "wav",  rate: 57600, baud: 19200, f0: 9600, df: 9600, bps: 1, kbps: 128 },
-  mp3fast:  { fmt: "mp3",  rate: 44100, baud: 4800,  f0: 4800, df: 4800, bps: 1, kbps: 128 },
-  mp3small: { fmt: "mp3",  rate: 44100, baud: 2400,  f0: 2400, df: 2400, bps: 1, kbps: 80 },
-  opus:     { fmt: "webm", rate: 48000, baud: 1200,  f0: 600,  df: 1800, bps: 1, kbps: 48 },
-  robust:   { fmt: "webm", rate: 48000, baud: 600,   f0: 1200, df: 1200, bps: 1, kbps: 48 }
+  mp3fast:  { fmt: "mp3",  rate: 48000, baud: 12000,  f0: 8192, df: 9216, bps: 1, kbps: 192 },
+  mp3slow:  { fmt: "mp3",  rate: 44100, baud: 6000,  f0: 4600, df: 4800, bps: 1, kbps: 96 },
+  webmfast: { fmt: "webm", rate: 48000, baud: 12000,  f0: 8192,  df: 9216, bps: 1, kbps: 196 },
+  webmslow: { fmt: "webm", rate: 48000, baud: 6000,   f0: 4600, df: 4800, bps: 1, kbps: 128 }
 };
 const AUD_IDS = { aFormat: "fmt", aRate: "rate", aBaud: "baud", aF0: "f0", aDf: "df", aBps: "bps", aKbps: "kbps", aAmp: "amp" };
 function audSet() {
@@ -1911,7 +2010,7 @@ function audSet() {
 }
 function audInfo() {
   if (!fmt) return;                       // set later by applyFormat()
-  const s = audSet(), f = fmt, rate = s.fmt === "webm" ? 48000 : s.rate;
+  const s = audSet(), f = userFmt, rate = s.fmt === "webm" ? 48000 : s.rate;
   const top = s.f0 + ((1 << s.bps) - 1) * s.df, net = s.baud * s.bps / 8 * (f.pay / f.nbytes) * (f.K / f.S);
   let t = "Raw " + (s.baud * s.bps) + " bit/s, net about " + net.toFixed(0) + " byte/s (1 MB takes " + (1048576 / net / 60).toFixed(1) + " min). Tones " + s.f0 + " to " + top + " Hz.";
   if (top > rate * 0.45) t += " Too high for " + rate + " Hz sample rate!";
@@ -1933,7 +2032,7 @@ let audioTxBlob = null, audioRxBlob = null, audioTxName = "brainvc-audio.wav", a
 const aSet = (id, msg, kind) => { $(id).textContent = msg; $(id).className = kind || "dim"; };
 $("aMake").onclick = async () => {
   const file = $("aSendFile").files[0]; if (!file) { aSet("aSendStatus", "Choose a file first.", "bad"); return; }
-  const s = audSet(), f = fmt, p = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps }, rate = s.fmt === "webm" ? 48000 : s.rate;
+  const s = audSet(), f = userFmt, p = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps }, rate = s.fmt === "webm" ? 48000 : s.rate;
   const bar = pct => { $("aBar").style.width = pct.toFixed(1) + "%"; };
   $("aMake").disabled = true; $("aDownload").disabled = true; audioTxBlob = null; bar(0);
   try {
@@ -1970,13 +2069,124 @@ $("aReceiveFile").onchange = async e => {
 };
 $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxName); };
 
+// =========================================================== TEST LAB
+// Local loopback benchmarks. Test payloads are deterministic so runs are reproducible.
+const testResults = [];
+let testCancel = false;
+function testPayload(n, seed) {
+  const out = new Uint8Array(n);
+  let x = seed >>> 0;
+  for (let i = 0; i < n; i++) {
+    x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+    out[i] = x & 255;
+  }
+  return out;
+}
+function testSame(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+async function testOptic(data) {
+  const t0 = performance.now(), enc0 = performance.now();
+  const e = new Encoder(userFmt, data), encodeMs = performance.now() - enc0;
+  const asm = new Assembler(userFmt);
+  let crcBad = 0;
+  const decode0 = performance.now();
+  for (let n = 0; n < e.N; n++) {
+    const frame = e.frame(n), lum = new Uint8Array(userFmt.ncells);
+    for (let i = 0; i < userFmt.ncells; i++) lum[i] = (frame[i >> 3] & (0x80 >> (i & 7))) ? 0 : 255;
+    const d = decodeFrame(userFmt, lum);
+    if (!d.frame) { crcBad++; continue; }
+    asm.add(d.frame.n, d.frame.N, d.frame.L, d.frame.payload);
+    if ((n & 127) === 127) { if (testCancel) throw new Error("Cancelled"); await tick(); }
+  }
+  const decoded = asm.assemble(), decodeMs = performance.now() - decode0;
+  return { ok: testSame(data, decoded.bytes) && decoded.lost === 0, ms: performance.now() - t0,
+    encodeMs, decodeMs, frames: e.N, crcBad, fixed: decoded.fixed,
+    rate: data.length / Math.max(0.001, e.N / 16) };
+}
+async function testAudio(data) {
+  const s = audSet(), rate = s.fmt === "webm" ? 48000 : s.rate;
+  const profile = { baud: s.baud, f0: s.f0, df: s.df, bps: s.bps };
+  const t0 = performance.now(), mod0 = performance.now();
+  const tx = amModulate(data, userFmt, profile, rate, s.amp), modMs = performance.now() - mod0;
+  const demod0 = performance.now();
+  const rx = await amDemodulate(tx.pcm, rate, pct => {
+    $("testBar").style.width = pct.toFixed(1) + "%";
+    $("testStatus").textContent = "A-Link demodulating PCM ... " + Math.round(pct) + "%";
+  });
+  const demodMs = performance.now() - demod0;
+  return { ok: testSame(data, rx.bytes), ms: performance.now() - t0, encodeMs: modMs,
+    decodeMs: demodMs, frames: rx.N, crcBad: rx.bad, fixed: rx.fixed,
+    rate: data.length / Math.max(0.001, tx.pcm.length / rate) };
+}
+function testRender() {
+  const rows = $("testRows");
+  if (!testResults.length) rows.innerHTML = '<tr><td colspan="9" class="dim">No tests yet.</td></tr>';
+  else rows.innerHTML = testResults.slice().reverse().map(r =>
+    '<tr><td>' + r.transport + '</td><td>' + r.sizeLabel + '</td><td>' + r.run +
+    '</td><td>' + r.ms.toFixed(1) + ' ms</td><td>' + r.rate.toFixed(1) + ' B/s</td><td>' + r.frames +
+    '</td><td>' + r.crcBad + '</td><td>' + r.fixed + '</td><td class="' + (r.ok ? 'test-pass' : 'test-fail') +
+    '">' + (r.ok ? 'PASS' : 'FAIL') + '</td></tr>').join("");
+  const passed = testResults.filter(r => r.ok).length;
+  $("testCount").textContent = testResults.length;
+  $("testPassed").textContent = passed;
+  $("testFailed").textContent = testResults.length - passed;
+  $("testCsv").disabled = $("testJson").disabled = !testResults.length;
+}
+function testDownload(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+$("testStart").onclick = async () => {
+  const size = parseInt($("testSize").value), runs = parseInt($("testRuns").value);
+  const mode = $("testTransport").value;
+  const transports = mode === "both" ? ["Optic", "A-Link"] : [mode === "optic" ? "Optic" : "A-Link"];
+  const total = runs * transports.length;
+  $("testStart").disabled = true; testCancel = false; $("testBar").style.width = "0%";
+  try {
+    for (let run = 1; run <= runs; run++) {
+      const data = testPayload(size, 0xB16B00B5 ^ size ^ run);
+      for (const transport of transports) {
+        if (testCancel) throw new Error("Cancelled");
+        $("testStatus").textContent = "Run " + run + "/" + runs + ": testing " + transport + " ...";
+        await tick();
+        const r = transport === "Optic" ? await testOptic(data) : await testAudio(data);
+        testResults.push({ transport, size, sizeLabel: (size / 1000000) + " MB",
+          run, ms: r.ms, encodeMs: r.encodeMs, decodeMs: r.decodeMs, rate: r.rate,
+          frames: r.frames, crcBad: r.crcBad, fixed: r.fixed, ok: r.ok,
+          date: new Date().toISOString(), format: { grid: userFmt.cols + "x" + userFmt.rows, K: userFmt.K, M: userFmt.M },
+          audio: transport === "A-Link" ? { baud: audSet().baud, sampleRate: audSet().fmt === "webm" ? 48000 : audSet().rate, bps: audSet().bps } : null });
+        testRender();
+        $("testBar").style.width = ((testResults.length % total) / total * 100).toFixed(1) + "%";
+      }
+    }
+    $("testBar").style.width = "100%";
+    $("testStatus").textContent = "Benchmark complete. " + total + " transport run(s) finished.";
+  } catch (e) {
+    $("testStatus").textContent = e.message === "Cancelled" ? "Benchmark cancelled." : "Test failed: " + e.message;
+    $("testStatus").className = "bad";
+  } finally { $("testStart").disabled = false; }
+};
+$("testClear").onclick = () => { testResults.length = 0; testRender(); $("testBar").style.width = "0%"; $("testStatus").textContent = "Results cleared."; $("testStatus").className = "dim"; };
+$("testCsv").onclick = () => {
+  const cols = ["date","transport","size","run","ms","encodeMs","decodeMs","rate","frames","crcBad","fixed","ok","grid","K","M","baud","sampleRate","bps"];
+  const esc = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const lines = [cols.join(",")].concat(testResults.map(r => [r.date,r.transport,r.size,r.run,r.ms.toFixed(2),r.encodeMs.toFixed(2),r.decodeMs.toFixed(2),r.rate.toFixed(2),r.frames,r.crcBad,r.fixed,r.ok,r.format.grid,r.format.K,r.format.M,r.audio?.baud,r.audio?.sampleRate,r.audio?.bps].map(esc).join(",")));
+  testDownload(new Blob([lines.join("\r\n")], {type:"text/csv"}), "brainvc-test-results.csv");
+};
+$("testJson").onclick = () => testDownload(new Blob([JSON.stringify(testResults, null, 2)], {type:"application/json"}), "brainvc-test-results.json");
+
 // ===== LAYOUT EDITOR: move and resize the boxes (saved in this browser) =====
 // Inside a tab (Receive / Send / A-Link) the first move "freezes" the whole tab: every box gets a fixed
 // position, so nothing jumps around any more when the video window, a status text or a field changes size.
 (function () {
   const NAMES = { fmt: "Format", "rx-src": "Source", "rx-stage": "Video", "rx-tools": "Tools", "rx-view": "Scanner view", "rx-stats": "Stats", "rx-bar": "Progress",
     "rx-player": "Player", "rx-status": "Status", "rx-tip": "Tips", "tx-main": "Send", "tx-code": "Code", "tx-video": "Video export", "tx-tip": "Tip",
-    "a-make": "Create audio", "a-set": "A-Link settings", "a-recv": "Receive audio", "a-how": "How it works" };
+    "a-make": "Create audio", "a-set": "A-Link settings", "a-recv": "Receive audio", "a-how": "How it works",
+    "test-main": "Test Lab", "test-res": "Results", "test-how": "What is measured" };
   try { localStorage.removeItem("bvc_layout"); } catch (e) {}          // old format (offsets), no longer valid
   let st = store.get("layout2", null);
   if (!st || typeof st !== "object") st = {};
@@ -2111,7 +2321,7 @@ $("aRxDownload").onclick = () => { if (audioRxBlob) aSave(audioRxBlob, audioRxNa
 })();
 
 // ---- start
-applyFormat();
+applyFormat(false, $("fmtProfile").value);
 loadQuad();
 </script>
 </body>
