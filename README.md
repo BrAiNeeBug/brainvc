@@ -3,12 +3,12 @@
 **Optical + acoustic data link** – turn any file into a stream of pixel frames (or sound), show it on a screen, put it into a video or an audio file, and read it back from a screen, a video file, a camera or an audio file.
 
 [![Web v6.0](https://img.shields.io/badge/▶_Web_v6.0-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
-[![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
-[![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
+[![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)](#-versions)
+[![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)](#️-disclaimer--usage-restrictions)
 
 
 > [!IMPORTANT]
-> **Please use the web version v6.0.** Older versions (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
+> **Please use the web version v6.0.** Older  (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
 > BrAiNVC is **not safe** and still in **test mode** – please follow the [restrictions](#️-disclaimer--usage-restrictions) below. Really.
 
 ---
@@ -67,7 +67,7 @@ Press **Layout** in the header, then drag a box to move it or drag its corner to
 | Part | Purpose |
 |---|---|
 | `brainvc.html` | Web edition v6.0 – live scanner, encoder, video export, A-Link audio, Test Lab. |
-| `old/` | Older versions: **v4.0** (16-bit frame counter) and **v2** (including the runtime live-scanner you can try out) |
+| `old/` | Older : **v4.0** (16-bit frame counter) and **v2** (including the runtime live-scanner you can try out) |
 
 ---
 
