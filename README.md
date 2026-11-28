@@ -8,7 +8,7 @@
 
 
 > [!IMPORTANT]
-> **Please use the web version v6.0.** Older  (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-versions)).
+> **Please use the web version v6.0.** Older  (v4.0, v2) are kept in the `old/` folder to read old videos (see [Versions](#-Components)).
 > BrAiNVC is **not safe** and still in **test mode** – please follow the [restrictions](#️-disclaimer--usage-restrictions) below. Really.
 
 ---
