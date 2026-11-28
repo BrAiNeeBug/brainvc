@@ -3,8 +3,8 @@
 **Optical + acoustic data link** – turn any file into a stream of pixel frames (or sound), show it on a screen, put it into a video or an audio file, and read it back from a screen, a video file, a camera or an audio file.
 
 [![Web v6.0](https://img.shields.io/badge/▶_Web_v6.0-4cd98a?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
-![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)
-![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)
+[![Status](https://img.shields.io/badge/status-experimental-ffb454?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
+[![Use](https://img.shields.io/badge/use-private_%2F_non--commercial-lightgrey?style=for-the-badge)](https://braineebug.github.io/brainvc/brainvc.html)
 
 
 > [!IMPORTANT]
