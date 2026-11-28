@@ -981,7 +981,7 @@ for (const [id, p] of Object.entries(FORMAT_PROFILES)) {
 let fmt, userFmt;   // fmt = what the receiver decodes with (may come from the sender), userFmt = your own Grid / K / M (sender, Test Lab, A-Link)
 function showActiveFmt(auto) {
   const f = fmt;
-  $("fmtActive").textContent = f.cols + "x" + f.rows + " \u00b7 K " + f.K + " \u00b7 M " + f.M + (auto ? " (from sender)" : " (manual)");
+  $("fmtActive").textContent = f.cols + "x" + f.rows + " \u00b7 K " + f.K + " \u00b7 M " + f.M + (auto ? " (auto)" : " (manual)");
 }
 // auto === true: `ann` is the sender's announce frame. Only the receiver switches, the manual fields stay as they are.
 function applyFormat(auto, selectedProfile, ann) {
