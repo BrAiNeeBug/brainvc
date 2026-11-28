@@ -963,13 +963,13 @@ const store = {
 // Add profiles here: give each one a unique key, a label, and Grid / K / M values.
 // The profile is only a preset. You can still edit all three values afterwards.
 const FORMAT_PROFILES = {
-  VideoHS: {
-    label: "VideoHS / MaxK",
-    grid: "192x108", K: 16, M: 1
+  Default: {
+    label: "Default",
+    grid: "192x108", K: 8, M: 2
   },
-  AudioHS: {
-    label: "AudioHS / MaxK",
-    grid: "128x72", K: 16, M: 1
+  HighRate: {
+    label: "HighRate/AV",
+    grid: "192x108", K: 18, M: 2
   }
 };
 for (const [id, p] of Object.entries(FORMAT_PROFILES)) {
